@@ -1,0 +1,152 @@
+Create a clean hackathon starter project with this architecture:
+
+- Frontend: Next.js 15 with App Router, TypeScript, Tailwind CSS, shadcn/ui style components.
+- Backend: FastAPI in Python.
+- Database: Supabase Postgres, connected from the backend only.
+- AI Agent: Azure AI Foundry Agent, called only from the backend.
+- Deployment-ready:
+  - Frontend deployable to Vercel.
+  - Backend deployable to Render or Azure Container Apps.
+
+Project goal:
+Create an empty but functional starter environment for a 2-day programming competition. Do not implement business logic. Create only the base structure, navbar, footer, empty home page, database test endpoint, and AI chat endpoint.
+
+Create this folder structure:
+
+project-root/
+  frontend/
+    app/
+      layout.tsx
+      page.tsx
+      globals.css
+    components/
+      Navbar.tsx
+      Footer.tsx
+      ChatBox.tsx
+    lib/
+      api.ts
+    package.json
+    .env.example
+
+  backend/
+    app/
+      main.py
+      config.py
+      db.py
+      azure_agent.py
+      models.py
+      routes/
+        health.py
+        items.py
+        chat.py
+    requirements.txt
+    .env.example
+    Dockerfile
+
+Frontend requirements:
+1. The homepage should have:
+   - Navbar
+   - Main empty hero section with title: "Hackathon Starter"
+   - Subtitle: "UI + Azure AI Agent + Supabase Backend"
+   - ChatBox component
+   - Footer
+
+2. Use clean modern UI:
+   - Tailwind CSS
+   - responsive layout
+   - centered content
+   - rounded cards
+   - nice spacing
+   - no complex design
+
+3. ChatBox should:
+   - have a textarea/input
+   - have a Send button
+   - call POST `${NEXT_PUBLIC_API_URL}/api/chat`
+   - display the assistant response
+   - show loading state
+   - handle errors
+
+4. Create frontend/lib/api.ts with helper functions:
+   - sendChatMessage(message: string)
+   - getHealth()
+
+Backend requirements:
+1. Use FastAPI.
+2. Enable CORS using FRONTEND_URL from env.
+3. Add these endpoints:
+   - GET /health
+   - GET /api/items
+   - POST /api/items
+   - POST /api/chat
+
+4. Supabase:
+   - Use environment variables:
+     SUPABASE_URL
+     SUPABASE_SERVICE_ROLE_KEY
+   - Create db.py with a Supabase client.
+   - /api/items should read/write to table app_items.
+
+5. Azure AI Agent:
+   - Use environment variables:
+     AZURE_AI_PROJECT_ENDPOINT
+     AZURE_AGENT_ID
+     AZURE_TENANT_ID
+     AZURE_CLIENT_ID
+     AZURE_CLIENT_SECRET
+   - Create azure_agent.py with a function:
+     call_agent(user_message: str) -> str
+   - Keep implementation clean and isolated.
+   - If Azure env vars are missing, return a safe mock response:
+     "Azure agent is not configured yet."
+
+6. /api/chat should:
+   - receive JSON: { "message": "..." }
+   - save user message to Supabase table chat_messages if Supabase is configured
+   - call call_agent(message)
+   - save assistant response to Supabase table chat_messages if Supabase is configured
+   - return JSON: { "answer": "..." }
+
+7. Add Pydantic models:
+   - ChatRequest
+   - ChatResponse
+   - ItemCreate
+   - ItemResponse
+
+8. Add .env.example files for frontend and backend.
+
+9. Add requirements.txt with the needed packages.
+
+10. Add Dockerfile for backend.
+
+11. Add README.md with:
+   - how to run frontend
+   - how to run backend
+   - required environment variables
+   - Supabase SQL tables
+   - deployment notes for Vercel and Render
+
+Supabase SQL tables to include in README:
+
+create table app_items (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  created_at timestamp default now()
+);
+
+create table chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  role text not null,
+  content text not null,
+  created_at timestamp default now()
+);
+
+Important:
+- Do not over-engineer.
+- Do not add authentication yet.
+- Do not add local database.
+- Do not expose Supabase service role key to frontend.
+- Keep Azure logic backend-only.
+- Make the project runnable immediately.
+- Prefer simple, readable code over abstractions.

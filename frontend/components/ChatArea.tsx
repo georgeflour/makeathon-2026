@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, Sparkles } from "lucide-react";
 import { useChatContext } from "@/context/ChatContext";
 import { ChartPanel } from "@/components/ChartPanel";
 
@@ -53,10 +53,11 @@ export function ChatArea() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          /* Welcome / empty state */
           <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
             <div className="mb-8 text-center">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 mx-auto mb-4" />
+              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 mx-auto mb-4 flex items-center justify-center">
+                <Sparkles className="h-6 w-6 text-white" />
+              </div>
               <h1 className="text-2xl font-semibold text-gray-900 dark:text-white/90 mb-1">
                 How can I help you?
               </h1>
@@ -77,7 +78,6 @@ export function ChatArea() {
             </div>
           </div>
         ) : (
-          /* Conversation */
           <div className="max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
             {messages.map((msg) =>
               msg.role === "user" ? (
@@ -90,7 +90,9 @@ export function ChatArea() {
                 </div>
               ) : (
                 <div key={msg.id} className="flex gap-3">
-                  <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5" />
+                  <div className="h-7 w-7 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5 flex items-center justify-center">
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 dark:text-white/90 leading-relaxed whitespace-pre-wrap">
                       {msg.content}
@@ -107,7 +109,9 @@ export function ChatArea() {
 
             {isLoading && (
               <div className="flex gap-3">
-                <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-1" />
+                <div className="h-7 w-7 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-1 flex items-center justify-center">
+                  <Sparkles className="h-3.5 w-3.5 text-white" />
+                </div>
                 <div className="flex items-center gap-1 pt-1.5">
                   {[0, 150, 300].map((delay) => (
                     <span
@@ -128,7 +132,7 @@ export function ChatArea() {
       {/* Input bar */}
       <div className="flex-shrink-0 px-4 pb-6 pt-2">
         <div className="max-w-3xl mx-auto">
-          <div className="relative flex items-end gap-3 rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#2f2f2f] px-4 py-3 focus-within:border-gray-400 dark:focus-within:border-white/25 transition-colors shadow-sm">
+          <div className="flex items-center gap-2 rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-[#2f2f2f] px-4 py-3 focus-within:border-gray-400 dark:focus-within:border-white/25 transition-colors shadow-sm">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -136,7 +140,7 @@ export function ChatArea() {
               onChange={handleInput}
               onKeyDown={handleKeyDown}
               disabled={isLoading}
-              placeholder="Message Hack to the Future..."
+              placeholder="How can I help you today?"
               className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white/90 placeholder:text-gray-400 dark:placeholder:text-white/25 outline-none resize-none max-h-[200px] leading-relaxed disabled:opacity-50"
             />
             <button
@@ -151,9 +155,17 @@ export function ChatArea() {
               )}
             </button>
           </div>
-          <p className="text-center text-[11px] text-gray-300 dark:text-white/15 mt-2">
-            Hack to the Future · SmartRep × Uni AI Makeathon 2026
-          </p>
+          <div className="text-center mt-2 space-y-0.5">
+            <p className="text-[11px] text-gray-400 dark:text-white/25">
+              Hack to the Future AI can make mistakes. Always verify important information.
+            </p>
+            <p className="text-[11px] text-gray-300 dark:text-white/15 font-medium">
+              Hack to the Future x SmartRep.AI
+            </p>
+            <p className="text-[11px] text-gray-300 dark:text-white/15">
+              Makeathon 2026
+            </p>
+          </div>
         </div>
       </div>
     </div>

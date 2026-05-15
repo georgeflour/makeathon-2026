@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChatProvider } from "@/context/ChatContext";
+import { Navbar } from "@/components/Navbar";
 import { Sidebar } from "@/components/Sidebar";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -25,9 +26,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ChatProvider>
-      <div className="flex h-full w-full overflow-hidden">
-        <Sidebar isDark={isDark} onToggleTheme={toggleTheme} />
-        <div className="flex-1 overflow-hidden">{children}</div>
+      <div className="flex flex-col h-full">
+        <Navbar isDark={isDark} onToggleTheme={toggleTheme} />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <div className="flex-1 overflow-hidden">{children}</div>
+        </div>
       </div>
     </ChatProvider>
   );

@@ -26,20 +26,39 @@ export interface Chat {
   name: string;
   messages: Message[];
   createdAt: number;
+  pinned?: boolean;
+}
+
+export interface Report {
+  id: string;
+  name: string;
+  createdAt: number;
+  pinned?: boolean;
 }
 
 interface ChatContextValue {
+  // Chats
   chats: Chat[];
   activeChatId: string | null;
   activeChat: Chat | undefined;
   isLoading: boolean;
-  sidebarWidth: number;
-  setSidebarWidth: (w: number) => void;
   newChat: () => void;
   selectChat: (id: string) => void;
   renameChat: (id: string, name: string) => void;
   deleteChat: (id: string) => void;
   sendMessage: (text: string) => void;
+  pinChat: (id: string) => void;
+  // Reports
+  reports: Report[];
+  activeReportId: string | null;
+  addReport: () => void;
+  selectReport: (id: string) => void;
+  renameReport: (id: string, name: string) => void;
+  deleteReport: (id: string) => void;
+  pinReport: (id: string) => void;
+  // Sidebar
+  sidebarWidth: number;
+  setSidebarWidth: (w: number) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -48,16 +67,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("httf-chats");
-      if (saved) {
-        const parsed = JSON.parse(saved) as Chat[];
+      const savedChats = localStorage.getItem("httf-chats");
+      if (savedChats) {
+        const parsed = JSON.parse(savedChats) as Chat[];
         setChats(parsed);
         if (parsed.length > 0) setActiveChatId(parsed[0].id);
+      }
+      const savedReports = localStorage.getItem("httf-reports");
+      if (savedReports) {
+        const parsed = JSON.parse(savedReports) as Report[];
+        setReports(parsed);
+        if (parsed.length > 0) setActiveReportId(parsed[0].id);
       }
     } catch {}
     setMounted(true);
@@ -66,6 +93,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (mounted) localStorage.setItem("httf-chats", JSON.stringify(chats));
   }, [chats, mounted]);
+
+  useEffect(() => {
+    if (mounted) localStorage.setItem("httf-reports", JSON.stringify(reports));
+  }, [reports, mounted]);
+
+  // ── Chats ────────────────────────────────────────────────────────────────
 
   const newChat = useCallback(() => {
     const id = crypto.randomUUID();
@@ -76,9 +109,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setActiveChatId(id);
   }, []);
 
-  const selectChat = useCallback((id: string) => {
-    setActiveChatId(id);
-  }, []);
+  const selectChat = useCallback((id: string) => setActiveChatId(id), []);
 
   const renameChat = useCallback((id: string, name: string) => {
     setChats((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
@@ -88,14 +119,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       setChats((prev) => {
         const next = prev.filter((c) => c.id !== id);
-        if (activeChatId === id) {
-          setActiveChatId(next.length > 0 ? next[0].id : null);
-        }
+        if (activeChatId === id) setActiveChatId(next.length > 0 ? next[0].id : null);
         return next;
       });
     },
     [activeChatId]
   );
+
+  const pinChat = useCallback((id: string) => {
+    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
+  }, []);
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
@@ -178,6 +211,38 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [activeChatId]
   );
 
+  // ── Reports ───────────────────────────────────────────────────────────────
+
+  const addReport = useCallback(() => {
+    const id = crypto.randomUUID();
+    setReports((prev) => [
+      { id, name: "New Report", createdAt: Date.now() },
+      ...prev,
+    ]);
+    setActiveReportId(id);
+  }, []);
+
+  const selectReport = useCallback((id: string) => setActiveReportId(id), []);
+
+  const renameReport = useCallback((id: string, name: string) => {
+    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
+  }, []);
+
+  const deleteReport = useCallback(
+    (id: string) => {
+      setReports((prev) => {
+        const next = prev.filter((r) => r.id !== id);
+        if (activeReportId === id) setActiveReportId(next.length > 0 ? next[0].id : null);
+        return next;
+      });
+    },
+    [activeReportId]
+  );
+
+  const pinReport = useCallback((id: string) => {
+    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, pinned: !r.pinned } : r)));
+  }, []);
+
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
@@ -187,13 +252,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         activeChatId,
         activeChat,
         isLoading,
-        sidebarWidth,
-        setSidebarWidth,
         newChat,
         selectChat,
         renameChat,
         deleteChat,
         sendMessage,
+        pinChat,
+        reports,
+        activeReportId,
+        addReport,
+        selectReport,
+        renameReport,
+        deleteReport,
+        pinReport,
+        sidebarWidth,
+        setSidebarWidth,
       }}
     >
       {children}

@@ -4,9 +4,12 @@ import { Fragment, useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  BarChart2,
   Check,
   CheckCircle,
+  Database,
   Loader2,
+  MessageSquare,
   Moon,
   Sparkles,
   Sun,
@@ -24,7 +27,6 @@ export function OnboardingFlow() {
   const [colorPalette, setColorPalette] = useState("ocean");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Apply theme live so user sees the result while choosing
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
@@ -40,9 +42,35 @@ export function OnboardingFlow() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-[#111]">
+    <div className="h-full flex flex-col bg-white dark:bg-[#111] relative overflow-hidden">
+      <style>{`
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateX(22px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes float1 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50%       { transform: translate(40px, -40px) scale(1.08); }
+        }
+        @keyframes float2 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50%       { transform: translate(-30px, 30px) scale(0.92); }
+        }
+        @keyframes float3 {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50%       { transform: translate(20px, 40px) scale(1.05); }
+        }
+      `}</style>
+
+      {/* Animated blobs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+        <div style={{ position: "absolute", top: "-10%", right: "-5%", width: 420, height: 420, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)", filter: "blur(48px)", animation: "float1 13s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", bottom: "-15%", left: "-10%", width: 520, height: 520, borderRadius: "50%", background: "radial-gradient(circle, rgba(59,130,246,0.13) 0%, transparent 70%)", filter: "blur(56px)", animation: "float2 17s ease-in-out infinite" }} />
+        <div style={{ position: "absolute", top: "40%", left: "30%", width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.09) 0%, transparent 70%)", filter: "blur(64px)", animation: "float3 11s ease-in-out infinite" }} />
+      </div>
+
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-gray-100 dark:border-white/5 px-8 py-4 flex items-center gap-2.5">
+      <header className="flex-shrink-0 border-b border-gray-100 dark:border-white/5 px-8 py-4 flex items-center gap-2.5 relative z-10">
         <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center">
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
@@ -52,15 +80,19 @@ export function OnboardingFlow() {
       </header>
 
       {/* Step bar */}
-      <div className="flex-shrink-0 px-8 pt-10 pb-0">
+      <div className="flex-shrink-0 px-8 pt-10 pb-0 relative z-10">
         <div className="max-w-lg mx-auto">
           <StepBar current={step} labels={STEP_LABELS} />
         </div>
       </div>
 
       {/* Step content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 overflow-y-auto">
-        <div className="w-full max-w-lg">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 overflow-y-auto relative z-10">
+        <div
+          key={step}
+          className="w-full max-w-lg"
+          style={{ animation: "slideIn 0.35s ease-out" }}
+        >
           {step === 1 && (
             <StepWelcome
               displayName={displayName}
@@ -182,7 +214,9 @@ function StepWelcome({
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Welcome aboard 👋</h1>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-violet-600 bg-clip-text text-transparent">
+          Welcome aboard
+        </h1>
         <p className="text-gray-500 dark:text-white/50 mt-2 text-sm">
           Let&apos;s personalise your workspace in a few quick steps.
         </p>
@@ -224,7 +258,9 @@ function StepTheme({
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Choose your theme</h1>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-violet-600 bg-clip-text text-transparent">
+          Choose your theme
+        </h1>
         <p className="text-gray-500 dark:text-white/50 mt-2 text-sm">
           You can switch anytime from Settings.
         </p>
@@ -262,9 +298,7 @@ function ThemeCard({
           : "border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20"
       }`}
     >
-      {/* App mockup preview */}
       <div className={`h-36 ${d ? "bg-[#212121]" : "bg-gray-50"} overflow-hidden`}>
-        {/* Navbar */}
         <div
           className={`h-7 flex items-center gap-1.5 px-3 border-b ${
             d ? "bg-[#171717] border-white/8" : "bg-white border-gray-200"
@@ -275,9 +309,7 @@ function ThemeCard({
           <div className="flex-1" />
           <div className={`h-4 w-4 rounded-full ${d ? "bg-white/10" : "bg-gray-200"}`} />
         </div>
-        {/* Body */}
         <div className="flex" style={{ height: "calc(100% - 28px)" }}>
-          {/* Sidebar */}
           <div
             className={`w-10 border-r flex flex-col justify-end pb-2 gap-1 px-1.5 ${
               d ? "bg-[#171717] border-white/8" : "bg-white border-gray-200"
@@ -286,7 +318,6 @@ function ThemeCard({
             <div className={`h-4 w-full rounded-sm ${d ? "bg-white/10" : "bg-gray-200"}`} />
             <div className={`h-4 w-full rounded-sm ${d ? "bg-white/8" : "bg-gray-100"}`} />
           </div>
-          {/* Chat area */}
           <div className="flex-1 p-2.5 space-y-1.5">
             <div className={`h-1.5 w-3/4 rounded-full ${d ? "bg-white/12" : "bg-gray-200"}`} />
             <div className={`h-1.5 w-1/2 rounded-full ${d ? "bg-white/8" : "bg-gray-100"}`} />
@@ -305,7 +336,6 @@ function ThemeCard({
         </div>
       </div>
 
-      {/* Label */}
       <div
         className={`px-4 py-3 flex items-center justify-between ${
           d ? "bg-[#1a1a1a]" : "bg-white"
@@ -343,7 +373,9 @@ function StepPalette({
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Pick your chart palette</h1>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-violet-600 bg-clip-text text-transparent">
+          Pick your chart palette
+        </h1>
         <p className="text-gray-500 dark:text-white/50 mt-2 text-sm">
           Applied to all charts and visualisations.
         </p>
@@ -397,6 +429,12 @@ function MiniBarChart({ colors }: { colors: string[] }) {
 
 // ── Step 4: Ready ─────────────────────────────────────────────────────────────
 
+const READY_CARDS = [
+  { icon: MessageSquare, title: "Natural language", body: "Ask in English or Greek" },
+  { icon: BarChart2,     title: "Instant charts",  body: "Visualisations generated automatically" },
+  { icon: Database,      title: "Saved history",   body: "Chats sync to your account" },
+];
+
 function StepReady({
   displayName,
   onFinish,
@@ -411,8 +449,8 @@ function StepReady({
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          {displayName.trim() ? `All set, ${displayName.trim()}!` : "All set!"} 🚀
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-500 to-violet-600 bg-clip-text text-transparent">
+          {displayName.trim() ? `All set, ${displayName.trim()}!` : "All set!"}
         </h1>
         <p className="text-gray-500 dark:text-white/50 mt-2 text-sm">
           You&apos;re ready to explore SmartRep voicebot data.
@@ -420,20 +458,16 @@ function StepReady({
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { icon: "💬", title: "Natural language", body: "Ask in English or Greek" },
-          { icon: "📊", title: "Instant charts", body: "Visualisations generated automatically" },
-          { icon: "💾", title: "Saved history", body: "Chats sync to your account" },
-        ].map((item) => (
+        {READY_CARDS.map(({ icon: Icon, title, body }) => (
           <div
-            key={item.title}
+            key={title}
             className="rounded-xl bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/8 p-4"
           >
-            <div className="text-2xl mb-2">{item.icon}</div>
-            <p className="text-xs font-semibold text-gray-900 dark:text-white mb-0.5">
-              {item.title}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-white/40">{item.body}</p>
+            <div className="mb-3">
+              <Icon className="h-5 w-5 text-blue-500" />
+            </div>
+            <p className="text-xs font-semibold text-gray-900 dark:text-white mb-0.5">{title}</p>
+            <p className="text-xs text-gray-500 dark:text-white/40">{body}</p>
           </div>
         ))}
       </div>

@@ -12,7 +12,10 @@ from app.query_engine import execute_query, normalize_data
 _data_dir = Path(__file__).parent / "data"
 _SCHEMA = (_data_dir / "schema.md").read_text(encoding="utf-8")
 _METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
-_DIAGRAMS = (Path(__file__).parent.parent.parent / "diagrams.md").read_text(encoding="utf-8")
+_visuals_dir = Path(__file__).parent.parent.parent / "visuals"
+_CHARTS = (_visuals_dir / "charts.json").read_text(encoding="utf-8")
+_PALLETS = (_visuals_dir / "pallets.json").read_text(encoding="utf-8")
+_PROMPT = (_visuals_dir / "prompt.txt").read_text(encoding="utf-8")
 
 SYSTEM_PROMPT = (
     "You are NR2Dashboard, a data analyst AI for SmartRep's banking voicebot analytics platform.\n"
@@ -28,7 +31,13 @@ SYSTEM_PROMPT = (
     "- Always ALIAS computed columns: e.g. AVG(...) AS containment_rate\n"
     "- When joining turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicate rows\n\n"
     "== CHART SELECTION GUIDE ==\n"
-    + _DIAGRAMS
+    + _CHARTS
+    + "\n\n"
+    "== PALETTE SELECTION GUIDE ==\n"
+    + _PALLETS
+    + "\n\n"
+    "== CHART CREATION PROMPT ==\n"
+    + _PROMPT
     + "\n\n"
     "== RATES AND PERCENTAGES — CRITICAL ==\n"
     "- ALL rate/percentage values MUST be expressed as decimals between 0 and 1 (e.g. 0.76, not 76)\n"
@@ -80,7 +89,11 @@ TOOLS = [
                     },
                     "chart_type": {
                         "type": "string",
-                        "enum": ["bar", "line", "pie", "area", "kpi"],
+                        "description": "The type of chart to render, from the CHART SELECTION GUIDE",
+                    },
+                    "palette": {
+                        "type": "string",
+                        "description": "The vega-lite-name of the selected color palette",
                     },
                     "title": {"type": "string", "description": "Chart title"},
                     "explanation": {
@@ -189,6 +202,7 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
                 "sql": sql,
                 "explanation": chart_args.get("explanation"),
                 "color_rules": color_rules,
+                "palette": chart_args.get("palette"),
             }
 
         messages.extend(tool_results)

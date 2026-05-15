@@ -1,0 +1,62 @@
+{
+    "Tableau 10": {
+        "description": "The default and most popular categorical color palette. Features 10 distinct, highly contrastive, and professional colors. It is designed for nominal data where categories have no inherent order, such as agent names, department names, or status types. It provides excellent legibility in both light and dark UI themes.",
+        "vega-lite-name": "tableau10"
+    },
+    "Tableau 20": {
+        "description": "An extension of the Tableau 10 palette designed for charts with many categories (between 10 and 20). It organizes colors in pairs of light and dark shades of the same hue. This allows for accidental or intentional visual grouping of related sub-categories while keeping the chart clean.",
+        "vega-lite-name": "tableau20"
+    },
+    "Dark2": {
+        "description": "A categorical palette from ColorBrewer featuring muted, earthy, and darker tones with high color saturation. It is exceptionally well-suited for minimal designs, dark mode dashboards, and line charts where thin elements need to stand out without causing visual fatigue.",
+        "vega-lite-name": "dark2"
+    },
+    "Set 2": {
+        "description": "A pastel-based categorical palette offering soft, relaxed hues. It is ideal for clean, light-themed dashboards with large colored marks (such as stacked bar charts or filled area charts) because the colors do not overwhelm the user's eyes.",
+        "vega-lite-name": "set2"
+    },
+    "Paired": {
+        "description": "A categorical palette explicitly structured in pairs of light and dark variations of the same color (e.g., light blue/dark blue, light green/dark green). Highly effective when visualizing grouped nominal variables or comparing binary states across multiple entities.",
+        "vega-lite-name": "paired"
+    },
+    "Viridis": {
+        "description": "The gold standard for multi-hue sequential data. It transitions smoothly from deep purple through green to bright yellow. It is perceptually uniform (color changes match data changes linearly) and strictly colorblind-safe. Perfect for continuous numerical values like costs, durations, or scatter plot density.",
+        "vega-lite-name": "viridis"
+    },
+    "Magma": {
+        "description": "A beautiful multi-hue sequential palette that spans from pitch black through dark purple and vibrant pink to brilliant white-yellow. Offers incredible contrast, making it a premium choice for high-density scatter plots and large data grids.",
+        "vega-lite-name": "magma"
+    },
+    "Inferno": {
+        "description": "A warm multi-hue sequential palette based on fire colors (black, red, orange, yellow). It is perceptually uniform and highly effective at drawing immediate user attention to peak values or critical volume levels in a dataset.",
+        "vega-lite-name": "inferno"
+    },
+    "Plasma": {
+        "description": "A modern, high-energy sequential palette moving from deep blue-violet to bright neon yellow. Widely used in tech-focused and futuristic dashboards to give data visualizations a cutting-edge aesthetic.",
+        "vega-lite-name": "plasma"
+    },
+    "Turbo": {
+        "description": "A smooth, optimized alternative to the classic rainbow color map. Unlike older rainbow palettes, it minimizes artificial visual banding. It is the premier choice for complex Heatmaps where users need to detect fine, precise variations across a continuous spectrum.",
+        "vega-lite-name": "turbo"
+    },
+    "Blues": {
+        "description": "The classic, corporate single-hue sequential palette. It transitions naturally from a soft, almost translucent ice-blue to a commanding deep navy. It is safe, universally trusted, and ideal for calendar charts, intensity matrices, or volume tracking.",
+        "vega-lite-name": "blues"
+    },
+    "Oranges": {
+        "description": "A single-hue sequential palette moving from pale tint to deep orange. Because orange inherently signals alert or caution, this palette is best reserved for visualizing system loads, error frequencies, or customer wait times.",
+        "vega-lite-name": "oranges"
+    },
+    "Greys": {
+        "description": "A neutral, minimalist single-hue sequential palette transitioning from light grey to dark charcoal/black. Typically utilized for secondary background data or historical context, ensuring that primary έγχρωμα features pop out effortlessly.",
+        "vega-lite-name": "greys"
+    },
+    "Red-Blue": {
+        "description": "The definitive diverging color palette. Features vibrant red on one end, pure blue on the other, and a neutral light grey/white in the center. Universally recognized for Sentiment Analysis (Red = Negative, Blue = Positive) or financial tracking (Red = Loss, Blue = Profit).",
+        "vega-lite-name": "redblue"
+    },
+    "Spectral": {
+        "description": "A multi-hue diverging palette that sweeps from deep red through yellow (the midpoint) to cool greens and blues. It operates like a traffic light, making it instantly intuitive for the general public (Red = Bad/Low, Yellow = Average, Green/Blue = Good/High).",
+        "vega-lite-name": "spectral"
+    }
+}

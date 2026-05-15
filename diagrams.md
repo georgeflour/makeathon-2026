@@ -17,7 +17,7 @@ The dataset contains 10,000 inbound bank voicebot calls over 90 days. Key dimens
 - **Dimensions:** `region`, `segment`, `main_language`, `bot_version`, `outcome`, `detected_intent`, `start_date`, `start_hour`, `start_dow`, `criterion_id`, `tool_name`
 - **Metrics:** `csat_score`, `call_duration_secs`, `cost_amount`, `latency_ms`, `success` (tool), `result` (evaluation criterion)
 - **Outcomes:** `resolved` / `escalated` / `abandoned` / `timeout`
-- **Views:** `v_conversations`, `v_turns`, `v_evaluations`, `v_data_collection`, `v_tool_calls`
+- **Tables:** `conversations`, `turns`, `evaluations`, `data_collection`, `tool_calls`
 
 ---
 
@@ -170,6 +170,6 @@ User asks about...
    - `el` (Greek) → blue, `en` (English) → orange
    - `resolved` → green, `escalated` → amber, `abandoned` → red, `timeout` → grey
    - `v2.2.1` → light blue, `v2.3.0` → dark blue
-6. **Time axis:** always use `start_date` from `v_conversations`; group by day unless the user asks for hourly or weekly.
+6. **Time axis:** always use `start_date` from `conversations`; group by day unless the user asks for hourly or weekly.
 7. **Metric definitions:** always use the exact formulas from the metrics dictionary. Do not invent your own definitions for containment rate, escalation rate, CSAT, or AHT.
 8. **When in doubt**, ask the user one clarifying question before generating the chart (e.g. "Do you want this broken down by region or overall?").

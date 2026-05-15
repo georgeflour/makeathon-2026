@@ -12,6 +12,7 @@ from app.query_engine import execute_query, normalize_data
 _data_dir = Path(__file__).parent / "data"
 _SCHEMA = (_data_dir / "schema.md").read_text(encoding="utf-8")
 _METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
+_DIAGRAMS = (Path(__file__).parent.parent.parent / "diagrams.md").read_text(encoding="utf-8")
 
 SYSTEM_PROMPT = (
     "You are NR2Dashboard, a data analyst AI for SmartRep's banking voicebot analytics platform.\n"
@@ -26,12 +27,9 @@ SYSTEM_PROMPT = (
     "- Limit bar/pie results to 20 rows max\n"
     "- Always ALIAS computed columns: e.g. AVG(...) AS containment_rate\n"
     "- When joining turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicate rows\n\n"
-    "== CHART SELECTION ==\n"
-    "- Rankings / distributions / comparisons across categories → bar\n"
-    "- Trends over time (date on x-axis) → line or area\n"
-    "- Proportions with 5 or fewer parts → pie\n"
-    "- Single summary metric → kpi\n"
-    "- More than 5 categories → bar, not pie\n\n"
+    "== CHART SELECTION GUIDE ==\n"
+    + _DIAGRAMS
+    + "\n\n"
     "== RATES AND PERCENTAGES — CRITICAL ==\n"
     "- ALL rate/percentage values MUST be expressed as decimals between 0 and 1 (e.g. 0.76, not 76)\n"
     "- NEVER multiply by 100 in SQL — the frontend handles display formatting\n"

@@ -85,7 +85,7 @@ TOOLS = [
                     "title": {"type": "string", "description": "Chart title"},
                     "explanation": {
                         "type": "string",
-                        "description": "Brief reason why this chart type was chosen",
+                        "description": "One short plain-language sentence describing what this chart shows (e.g. 'Containment rate per intent, sorted from highest to lowest.'). Do NOT mention why this chart type was chosen.",
                     },
                     "color_rules": {
                         "type": "object",

@@ -13,6 +13,8 @@ import {
   type ChatMessage as ApiChatMessage,
   type ChartSpec,
 } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
 
 export interface Message {
   id: string;
@@ -45,7 +47,7 @@ interface ChatContextValue {
   newChat: () => void;
   selectChat: (id: string) => void;
   renameChat: (id: string, name: string) => void;
-  deleteChat: (id: string) => void;
+  deleteChat: (id: string) => Promise<void>;
   sendMessage: (text: string) => void;
   pinChat: (id: string) => void;
   // Reports
@@ -54,7 +56,7 @@ interface ChatContextValue {
   addReport: () => void;
   selectReport: (id: string) => void;
   renameReport: (id: string, name: string) => void;
-  deleteReport: (id: string) => void;
+  deleteReport: (id: string) => Promise<void>;
   pinReport: (id: string) => void;
   // Sidebar
   sidebarWidth: number;
@@ -64,6 +66,7 @@ interface ChatContextValue {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,24 +74,75 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [mounted, setMounted] = useState(false);
+  const activeChatIdRef = useRef<string | null>(null);
+  activeChatIdRef.current = activeChatId;
 
+  // Load from Supabase when user is available, fall back to localStorage
   useEffect(() => {
-    try {
-      const savedChats = localStorage.getItem("httf-chats");
-      if (savedChats) {
-        const parsed = JSON.parse(savedChats) as Chat[];
+    if (!user) return;
+    (async () => {
+      const [{ data: chatRows }, { data: reportRows }] = await Promise.all([
+        supabase.from("chat_history").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("report_history").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+      ]);
+      if (chatRows && chatRows.length > 0) {
+        const parsed = chatRows.map((r) => {
+          const msgs = (r.messages ?? []) as Message[];
+          // Drop a trailing user message with no assistant reply (interrupted request)
+          const clean = msgs.length > 0 && msgs[msgs.length - 1].role === "user"
+            ? msgs.slice(0, -1)
+            : msgs;
+          return {
+            id: r.id,
+            name: r.name,
+            messages: clean,
+            createdAt: new Date(r.created_at).getTime(),
+            pinned: r.pinned ?? false,
+          };
+        });
         setChats(parsed);
-        if (parsed.length > 0) setActiveChatId(parsed[0].id);
+        setActiveChatId(parsed[0].id);
+      } else {
+        try {
+          const saved = localStorage.getItem("httf-chats");
+          if (saved) {
+            const parsed = JSON.parse(saved) as Chat[];
+            setChats(parsed);
+            if (parsed.length > 0) setActiveChatId(parsed[0].id);
+          }
+        } catch {}
       }
-      const savedReports = localStorage.getItem("httf-reports");
-      if (savedReports) {
-        const parsed = JSON.parse(savedReports) as Report[];
+      if (reportRows && reportRows.length > 0) {
+        const parsed = reportRows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          createdAt: new Date(r.created_at).getTime(),
+          pinned: r.pinned ?? false,
+        }));
         setReports(parsed);
-        if (parsed.length > 0) setActiveReportId(parsed[0].id);
+        setActiveReportId(parsed[0].id);
+      } else {
+        try {
+          const saved = localStorage.getItem("httf-reports");
+          if (saved) {
+            const parsed = JSON.parse(saved) as Report[];
+            setReports(parsed);
+            if (parsed.length > 0) setActiveReportId(parsed[0].id);
+          }
+        } catch {}
       }
-    } catch {}
-    setMounted(true);
-  }, []);
+      setMounted(true);
+    })();
+  // Depend only on user?.id — the user object reference changes on every token
+  // refresh, which would re-run this effect and restore deleted chats from DB.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  // Reset mounted when user changes so localStorage writes don't race with the
+  // fresh Supabase load for the new session.
+  useEffect(() => {
+    setMounted(false);
+  }, [user?.id]);
 
   useEffect(() => {
     if (mounted) localStorage.setItem("httf-chats", JSON.stringify(chats));
@@ -98,54 +152,101 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (mounted) localStorage.setItem("httf-reports", JSON.stringify(reports));
   }, [reports, mounted]);
 
+  const syncChat = useCallback(
+    async (chat: Chat) => {
+      if (!user) return;
+      await supabase.from("chat_history").upsert({
+        id: chat.id,
+        user_id: user.id,
+        name: chat.name,
+        messages: chat.messages,
+        pinned: chat.pinned ?? false,
+        created_at: new Date(chat.createdAt).toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    },
+    [user]
+  );
+
+  const syncReport = useCallback(
+    async (report: Report) => {
+      if (!user) return;
+      await supabase.from("report_history").upsert({
+        id: report.id,
+        user_id: user.id,
+        name: report.name,
+        pinned: report.pinned ?? false,
+        created_at: new Date(report.createdAt).toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    },
+    [user]
+  );
+
   // ── Chats ────────────────────────────────────────────────────────────────
 
   const newChat = useCallback(() => {
     const id = crypto.randomUUID();
-    setChats((prev) => [
-      { id, name: "New Chat", messages: [], createdAt: Date.now() },
-      ...prev,
-    ]);
+    const chat: Chat = { id, name: "New Chat", messages: [], createdAt: Date.now() };
+    setChats((prev) => [chat, ...prev]);
     setActiveChatId(id);
-  }, []);
+    syncChat(chat);
+  }, [syncChat]);
 
   const selectChat = useCallback((id: string) => setActiveChatId(id), []);
 
-  const renameChat = useCallback((id: string, name: string) => {
-    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
-  }, []);
-
-  const deleteChat = useCallback(
-    (id: string) => {
+  const renameChat = useCallback(
+    (id: string, name: string) => {
       setChats((prev) => {
-        const next = prev.filter((c) => c.id !== id);
-        if (activeChatId === id) setActiveChatId(next.length > 0 ? next[0].id : null);
+        const next = prev.map((c) => (c.id === id ? { ...c, name } : c));
+        const updated = next.find((c) => c.id === id);
+        if (updated) syncChat(updated);
         return next;
       });
     },
-    [activeChatId]
+    [syncChat]
   );
 
-  const pinChat = useCallback((id: string) => {
-    setChats((prev) => prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
-  }, []);
+  const deleteChat = useCallback(
+    async (id: string) => {
+      setChats((prev) => {
+        const next = prev.filter((c) => c.id !== id);
+        if (activeChatIdRef.current === id) setActiveChatId(next.length > 0 ? next[0].id : null);
+        return next;
+      });
+      if (user) await supabase.from("chat_history").delete().eq("id", id).eq("user_id", user.id);
+    },
+    [user]
+  );
+
+  const pinChat = useCallback(
+    (id: string) => {
+      setChats((prev) => {
+        const next = prev.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c));
+        const updated = next.find((c) => c.id === id);
+        if (updated) syncChat(updated);
+        return next;
+      });
+    },
+    [syncChat]
+  );
 
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
 
   const sendMessage = useCallback(
     async (text: string) => {
-      let chatId = activeChatId;
+      // Use the ref so we always read the current activeChatId, not a stale closure value
+      let chatId = activeChatIdRef.current;
       let isNewChat = false;
 
       if (!chatId) {
         chatId = crypto.randomUUID();
         isNewChat = true;
-        setChats((prev) => [
-          { id: chatId!, name: text.slice(0, 40), messages: [], createdAt: Date.now() },
-          ...prev,
-        ]);
+        const newChatRow: Chat = { id: chatId, name: text.slice(0, 40), messages: [], createdAt: Date.now() };
+        setChats((prev) => [newChatRow, ...prev]);
         setActiveChatId(chatId);
+        syncChat(newChatRow);
       }
 
       const currentMessages = isNewChat
@@ -188,60 +289,82 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           content: data.answer,
           chart: data.chart,
         };
-        setChats((prev) =>
-          prev.map((c) =>
+        setChats((prev) => {
+          const next = prev.map((c) =>
             c.id === finalId ? { ...c, messages: [...c.messages, assistantMsg] } : c
-          )
-        );
+          );
+          const updated = next.find((c) => c.id === finalId);
+          if (updated) syncChat(updated);
+          return next;
+        });
       } catch (err) {
         const errorMsg: Message = {
           id: crypto.randomUUID(),
           role: "assistant",
           content: err instanceof Error ? err.message : "Something went wrong.",
         };
-        setChats((prev) =>
-          prev.map((c) =>
+        setChats((prev) => {
+          const next = prev.map((c) =>
             c.id === finalId ? { ...c, messages: [...c.messages, errorMsg] } : c
-          )
-        );
+          );
+          const updated = next.find((c) => c.id === finalId);
+          if (updated) syncChat(updated);
+          return next;
+        });
       } finally {
         setIsLoading(false);
       }
     },
-    [activeChatId]
+    [syncChat]
   );
 
   // ── Reports ───────────────────────────────────────────────────────────────
 
   const addReport = useCallback(() => {
     const id = crypto.randomUUID();
-    setReports((prev) => [
-      { id, name: "New Report", createdAt: Date.now() },
-      ...prev,
-    ]);
+    const report: Report = { id, name: "New Report", createdAt: Date.now() };
+    setReports((prev) => [report, ...prev]);
     setActiveReportId(id);
-  }, []);
+    syncReport(report);
+  }, [syncReport]);
 
   const selectReport = useCallback((id: string) => setActiveReportId(id), []);
 
-  const renameReport = useCallback((id: string, name: string) => {
-    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, name } : r)));
-  }, []);
+  const renameReport = useCallback(
+    (id: string, name: string) => {
+      setReports((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, name } : r));
+        const updated = next.find((r) => r.id === id);
+        if (updated) syncReport(updated);
+        return next;
+      });
+    },
+    [syncReport]
+  );
 
   const deleteReport = useCallback(
-    (id: string) => {
+    async (id: string) => {
       setReports((prev) => {
         const next = prev.filter((r) => r.id !== id);
         if (activeReportId === id) setActiveReportId(next.length > 0 ? next[0].id : null);
         return next;
       });
+      if (user) await supabase.from("report_history").delete().eq("id", id).eq("user_id", user.id);
     },
-    [activeReportId]
+    [activeReportId, user]
   );
 
-  const pinReport = useCallback((id: string) => {
-    setReports((prev) => prev.map((r) => (r.id === id ? { ...r, pinned: !r.pinned } : r)));
-  }, []);
+  const pinReport = useCallback(
+    (id: string) => {
+      setReports((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, pinned: !r.pinned } : r));
+        const updated = next.find((r) => r.id === id);
+        if (updated) syncReport(updated);
+        return next;
+      });
+    },
+    [syncReport]
+  );
 
   const activeChat = chats.find((c) => c.id === activeChatId);
 

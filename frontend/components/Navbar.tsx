@@ -17,14 +17,14 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
       {/* Brand */}
       <div className="flex items-center gap-2 mr-3">
         <div className="h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0">
-            <Sparkles className="h-3.5 w-3.5 text-white" />
-          </div>
+          <Sparkles className="h-3.5 w-3.5 text-white" />
+        </div>
         <span className="text-sm font-semibold text-gray-800 dark:text-white/90 hidden sm:block">
           Hack to the Future
         </span>
       </div>
 
-      {/* Underline tabs — stretch to full navbar height so border-b sits at the bottom */}
+      {/* Nav tabs */}
       <div className="flex self-stretch mr-auto">
         <Link
           href="/"
@@ -48,7 +48,7 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
         </Link>
       </div>
 
-      {/* Theme toggle — far right */}
+      {/* Theme toggle */}
       <button
         onClick={onToggleTheme}
         title={isDark ? "Switch to light mode" : "Switch to dark mode"}

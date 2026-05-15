@@ -120,9 +120,12 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     if history:
-        for msg in history:
-            if msg.get("role") in ("user", "assistant") and msg.get("content"):
-                messages.append({"role": msg["role"], "content": msg["content"]})
+        # Drop trailing user messages — consecutive user turns are invalid for the API
+        # and happen when the page is refreshed before an assistant response arrives.
+        trimmed = [m for m in history if m.get("role") in ("user", "assistant") and m.get("content")]
+        while trimmed and trimmed[-1]["role"] == "user":
+            trimmed.pop()
+        messages.extend(trimmed)
 
     messages.append({"role": "user", "content": user_message})
 

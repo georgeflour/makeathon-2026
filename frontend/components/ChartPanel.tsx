@@ -18,14 +18,18 @@ import {
   Legend,
 } from "recharts";
 import type { ChartSpec } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { getPalette } from "@/lib/palettes";
 
-const PURPLE = "#6B46C1";
-const ORANGE = "#F97316";
-const DEFAULT_COLOR = "#3B82F6";
-
-function getBarColor(value: number, colorRules?: ChartSpec["color_rules"]): string {
-  if (!colorRules) return DEFAULT_COLOR;
-  return value >= colorRules.threshold ? PURPLE : ORANGE;
+function getBarColor(
+  value: number,
+  above: string,
+  below: string,
+  primary: string,
+  colorRules?: ChartSpec["color_rules"]
+): string {
+  if (!colorRules) return primary;
+  return value >= colorRules.threshold ? above : below;
 }
 
 function formatValue(value: number): string {
@@ -40,6 +44,9 @@ interface Props {
 
 export function ChartPanel({ chart }: Props) {
   const { type, title, data, color_rules, sql, explanation } = chart;
+  const { profile } = useAuth();
+  const palette = getPalette(profile?.settings?.color_palette);
+  const { colors, primary, above, below } = palette;
 
   return (
     <div className="w-full rounded-xl border bg-card shadow-sm overflow-hidden mt-2">
@@ -52,7 +59,7 @@ export function ChartPanel({ chart }: Props) {
 
       <div className="px-2 pb-4">
         {type === "kpi" && !Array.isArray(data) && (
-          <KpiCard value={(data as { value: number }).value} colorRules={color_rules} />
+          <KpiCard value={(data as { value: number }).value} colorRules={color_rules} primary={primary} above={above} below={below} />
         )}
 
         {type === "bar" && Array.isArray(data) && (
@@ -70,7 +77,7 @@ export function ChartPanel({ chart }: Props) {
               <Tooltip formatter={(v) => formatValue(Number(v))} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {(data as Array<{ label: string; value: number }>).map((entry, i) => (
-                  <Cell key={i} fill={getBarColor(entry.value, color_rules)} />
+                  <Cell key={i} fill={getBarColor(entry.value, above, below, colors[i % colors.length], color_rules)} />
                 ))}
               </Bar>
             </BarChart>
@@ -84,7 +91,7 @@ export function ChartPanel({ chart }: Props) {
               <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <Tooltip formatter={(v) => formatValue(Number(v))} />
-              <Line type="monotone" dataKey="y" stroke={DEFAULT_COLOR} dot={false} strokeWidth={2} />
+              <Line type="monotone" dataKey="y" stroke={primary} dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -94,15 +101,15 @@ export function ChartPanel({ chart }: Props) {
             <AreaChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
               <defs>
                 <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={DEFAULT_COLOR} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={DEFAULT_COLOR} stopOpacity={0} />
+                  <stop offset="5%" stopColor={primary} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={primary} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <Tooltip formatter={(v) => formatValue(Number(v))} />
-              <Area type="monotone" dataKey="y" stroke={DEFAULT_COLOR} fill="url(#areaGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="y" stroke={primary} fill="url(#areaGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         )}
@@ -121,7 +128,7 @@ export function ChartPanel({ chart }: Props) {
                 labelLine={false}
               >
                 {(data as Array<{ label: string; value: number }>).map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  <Cell key={i} fill={colors[i % colors.length]} />
                 ))}
               </Pie>
               <Tooltip formatter={(v) => formatValue(Number(v))} />
@@ -134,11 +141,11 @@ export function ChartPanel({ chart }: Props) {
       {color_rules && (
         <div className="px-4 pb-3 flex items-center gap-4 text-xs text-muted-foreground border-t pt-2">
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: PURPLE }} />
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: above }} />
             Above {(color_rules.threshold * 100).toFixed(0)}% threshold
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: ORANGE }} />
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: below }} />
             Needs attention
           </span>
         </div>
@@ -156,8 +163,20 @@ export function ChartPanel({ chart }: Props) {
   );
 }
 
-function KpiCard({ value, colorRules }: { value: number; colorRules?: ChartSpec["color_rules"] }) {
-  const color = colorRules ? getBarColor(value, colorRules) : DEFAULT_COLOR;
+function KpiCard({
+  value,
+  colorRules,
+  primary,
+  above,
+  below,
+}: {
+  value: number;
+  colorRules?: ChartSpec["color_rules"];
+  primary: string;
+  above: string;
+  below: string;
+}) {
+  const color = colorRules ? getBarColor(value, above, below, primary, colorRules) : primary;
   const display = value > 0 && value < 1 ? `${(value * 100).toFixed(1)}%` : value.toLocaleString();
   return (
     <div className="flex items-center justify-center py-8">
@@ -165,8 +184,3 @@ function KpiCard({ value, colorRules }: { value: number; colorRules?: ChartSpec[
     </div>
   );
 }
-
-const PIE_COLORS = [
-  "#6B46C1", "#F97316", "#3B82F6", "#10B981", "#F59E0B",
-  "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16", "#EC4899",
-];

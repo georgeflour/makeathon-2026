@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Check, FilePlus, Pencil, Pin, PinOff, Plus, Trash2, X } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { Check, FilePlus, LogOut, Pencil, Pin, PinOff, Plus, Settings, Trash2, X } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useChatContext } from "@/context/ChatContext";
+import { useAuth } from "@/context/AuthContext";
 
 export function Sidebar() {
   const {
@@ -11,11 +13,23 @@ export function Sidebar() {
     reports, activeReportId, addReport, selectReport, renameReport, deleteReport, pinReport,
     sidebarWidth, setSidebarWidth,
   } = useChatContext();
+  const { profile, signOut } = useAuth();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const pathname = usePathname();
+  const router = useRouter();
   const isDashboard = pathname === "/dashboard";
+
+  const goToChat = (id: string) => {
+    selectChat(id);
+    if (pathname === "/settings") router.push("/");
+  };
+
+  const goToNewChat = () => {
+    newChat();
+    if (pathname === "/settings") router.push("/");
+  };
   const widthRef = useRef(sidebarWidth);
   widthRef.current = sidebarWidth;
 
@@ -221,7 +235,7 @@ export function Sidebar() {
           <>
             <div className="px-2 pt-3 pb-1">
               <button
-                onClick={newChat}
+                onClick={goToNewChat}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
               >
                 <Plus className="h-4 w-4 flex-shrink-0" />
@@ -237,7 +251,7 @@ export function Sidebar() {
                     <ItemList
                       items={pinnedChats}
                       activeId={activeChatId}
-                      onSelect={selectChat}
+                      onSelect={goToChat}
                       onRename={renameChat}
                       onDelete={deleteChat}
                       onPin={pinChat}
@@ -253,7 +267,7 @@ export function Sidebar() {
                     <ItemList
                       items={recentChats}
                       activeId={activeChatId}
-                      onSelect={selectChat}
+                      onSelect={goToChat}
                       onRename={renameChat}
                       onDelete={deleteChat}
                       onPin={pinChat}
@@ -264,6 +278,10 @@ export function Sidebar() {
             </div>
           </>
         )}
+
+        {/* ── Bottom: settings + user profile ──────────────── */}
+        <UserSection profile={profile} signOut={signOut} />
+
       </div>
 
       {/* Resize handle */}
@@ -272,6 +290,61 @@ export function Sidebar() {
         className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
       >
         <div className="h-full w-full group-hover:bg-gray-400/30 dark:group-hover:bg-white/15 transition-colors" />
+      </div>
+    </div>
+  );
+}
+
+function UserSection({
+  profile,
+  signOut,
+}: {
+  profile: ReturnType<typeof useAuth>["profile"];
+  signOut: () => void;
+}) {
+  const pathname = usePathname();
+  const initials = profile?.display_name
+    ? profile.display_name.slice(0, 2).toUpperCase()
+    : (profile?.email?.slice(0, 2).toUpperCase() ?? "?");
+  const displayName = profile?.display_name ?? profile?.email ?? "";
+
+  return (
+    <div className="flex-shrink-0 border-t border-gray-200 dark:border-white/5 pt-1 pb-2 px-2 space-y-0.5">
+      {/* Settings link */}
+      <Link
+        href="/settings"
+        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+          pathname === "/settings"
+            ? "bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white"
+            : "text-gray-600 dark:text-white/50 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10"
+        }`}
+      >
+        <Settings className="h-4 w-4 flex-shrink-0" />
+        Settings
+      </Link>
+
+      {/* User profile row */}
+      <div className="group flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-200/60 dark:hover:bg-white/5 transition-colors">
+        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
+          {initials}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-gray-900 dark:text-white truncate leading-tight">
+            {displayName}
+          </p>
+          {profile?.display_name && (
+            <p className="text-[10px] text-gray-500 dark:text-white/30 truncate leading-tight">
+              {profile.email}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={signOut}
+          title="Sign out"
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-300/60 dark:hover:bg-white/10 text-gray-400 dark:text-white/40 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );

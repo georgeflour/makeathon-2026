@@ -1,12 +1,31 @@
 # pyrefly: ignore [missing-import]
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ColorRules(BaseModel):
+    threshold: float
+    above: str
+    below: str
+
+class ChartSpec(BaseModel):
+    type: str
+    title: str
+    data: Any
+    sql: str
+    explanation: Optional[str] = None
+    color_rules: Optional[ColorRules] = None
 
 class ChatRequest(BaseModel):
     message: str
+    history: list[ChatMessage] = []
 
 class ChatResponse(BaseModel):
     answer: str
+    chart: Optional[ChartSpec] = None
 
 class ItemCreate(BaseModel):
     title: str

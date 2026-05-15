@@ -7,8 +7,8 @@ import { Footer } from "@/components/Footer";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Hackathon Starter",
-  description: "UI + Azure AI Agent + Supabase Backend",
+  title: "NR2Dashboard — Speak with Your Data",
+  description: "Natural-language voicebot analytics powered by SmartRep × Uni AI",
 };
 
 export default function RootLayout({

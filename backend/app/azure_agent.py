@@ -1,34 +1,196 @@
-# pyrefly: ignore [missing-import]
-import os
+import json
+from pathlib import Path
+
 # pyrefly: ignore [missing-import]
 from azure.ai.projects import AIProjectClient
 # pyrefly: ignore [missing-import]
 from azure.identity import DefaultAzureCredential
-# pyrefly: ignore [missing-import]
-from app.config import settings
 
-def call_agent(user_message: str) -> str:
-    if not all([
-        settings.AZURE_AI_PROJECT_ENDPOINT,
-        settings.AZURE_AGENT_ID,
-        settings.AZURE_AGENT_VERSION
-    ]):
-        return "Azure agent is not configured yet."
-        
+from app.config import settings
+from app.query_engine import execute_query, normalize_data
+
+_data_dir = Path(__file__).parent / "data"
+_SCHEMA = (_data_dir / "schema.md").read_text(encoding="utf-8")
+_METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
+
+SYSTEM_PROMPT = (
+    "You are NR2Dashboard, a data analyst AI for SmartRep's banking voicebot analytics platform.\n"
+    "You have access to a DuckDB database with ~10,000 banking voicebot conversations over 90 days (Greek & English).\n\n"
+    "== TOOLS ==\n"
+    "- run_query(sql): Execute a DuckDB SQL SELECT query. Returns rows as JSON. Always use this to verify SQL first.\n"
+    "- render_chart(...): Your FINAL step — always end by calling this, never return plain text.\n\n"
+    "== SQL RULES ==\n"
+    "- Use ONLY these flat views: v_conversations, v_turns, v_evaluations, v_data_collection, v_tool_calls\n"
+    "- NEVER query conversations_raw directly\n"
+    "- For bar/pie/line/area: SQL must return exactly 2 columns — first = label/x-axis (string), second = numeric value. Always alias both columns.\n"
+    "- For kpi: return 1 row with 1 numeric column\n"
+    "- Limit bar/pie results to 20 rows max\n"
+    "- Always ALIAS computed columns: e.g. AVG(...) AS containment_rate\n"
+    "- When joining v_turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicate rows\n\n"
+    "== CHART SELECTION ==\n"
+    "- Rankings / distributions / comparisons across categories → bar\n"
+    "- Trends over time (date on x-axis) → line or area\n"
+    "- Proportions with 5 or fewer parts → pie\n"
+    "- Single summary metric → kpi\n"
+    "- More than 5 categories → bar, not pie\n\n"
+    "== RATES AND PERCENTAGES — CRITICAL ==\n"
+    "- ALL rate/percentage values MUST be expressed as decimals between 0 and 1 (e.g. 0.76, not 76)\n"
+    "- NEVER multiply by 100 in SQL — the frontend handles display formatting\n"
+    "- Containment rate formula: AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END)\n"
+    "- The threshold for containment rate is 0.85 (not 85)\n"
+    "- For containment charts always pass color_rules: {threshold: 0.85, above: 'purple', below: 'orange'}\n\n"
+    "== LANGUAGE ==\n"
+    "Answer in the same language as the user's question (Greek or English).\n\n"
+    "== DATABASE SCHEMA ==\n"
+    + _SCHEMA
+    + "\n\n== METRICS DEFINITIONS ==\n"
+    + _METRICS
+)
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_query",
+            "description": (
+                "Execute a DuckDB SQL SELECT query against the conversations database. "
+                "Returns rows as a JSON array. Always test SQL here before calling render_chart."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sql": {"type": "string", "description": "A valid DuckDB SQL SELECT query"}
+                },
+                "required": ["sql"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "render_chart",
+            "description": "Call this as your FINAL step to render the dashboard chart. This ends the turn.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "description": "Concise natural-language answer to the user's question",
+                    },
+                    "sql": {
+                        "type": "string",
+                        "description": "The final SQL query producing exactly 2 columns of chart data",
+                    },
+                    "chart_type": {
+                        "type": "string",
+                        "enum": ["bar", "line", "pie", "area", "kpi"],
+                    },
+                    "title": {"type": "string", "description": "Chart title"},
+                    "explanation": {
+                        "type": "string",
+                        "description": "Brief reason why this chart type was chosen",
+                    },
+                    "color_rules": {
+                        "type": "object",
+                        "description": "Optional threshold-based coloring (use for containment rate charts)",
+                        "properties": {
+                            "threshold": {"type": "number"},
+                            "above": {"type": "string"},
+                            "below": {"type": "string"},
+                        },
+                    },
+                },
+                "required": ["answer", "sql", "chart_type", "title"],
+            },
+        },
+    },
+]
+
+
+def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[str, dict | None]:
+    if not settings.AZURE_AI_PROJECT_ENDPOINT:
+        return "Azure AI is not configured.", None
+
     try:
         project_client = AIProjectClient(
             endpoint=settings.AZURE_AI_PROJECT_ENDPOINT,
-            credential=DefaultAzureCredential()
+            credential=DefaultAzureCredential(),
         )
-        
         openai_client = project_client.get_openai_client()
-        
-        # Reference the agent to get a response
-        response = openai_client.responses.create(
-            input=[{"role": "user", "content": user_message}],
-            extra_body={"agent_reference": {"name": settings.AZURE_AGENT_ID, "version": settings.AZURE_AGENT_VERSION, "type": "agent_reference"}},
-        )
-        
-        return response.output_text
     except Exception as e:
-        return f"Error communicating with Azure Agent: {e}"
+        return f"Failed to connect to Azure AI: {e}", None
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if history:
+        for msg in history:
+            if msg.get("role") in ("user", "assistant") and msg.get("content"):
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+    messages.append({"role": "user", "content": user_message})
+
+    for _ in range(6):
+        try:
+            response = openai_client.chat.completions.create(
+                model=settings.AZURE_DEPLOYMENT_NAME,
+                messages=messages,
+                tools=TOOLS,
+                tool_choice="auto",
+            )
+        except Exception as e:
+            return f"LLM error: {e}", None
+
+        msg = response.choices[0].message
+
+        if not msg.tool_calls:
+            return msg.content or "No response generated.", None
+
+        messages.append(msg)
+
+        chart_args = None
+        tool_results = []
+
+        for tc in msg.tool_calls:
+            try:
+                args = json.loads(tc.function.arguments)
+            except json.JSONDecodeError:
+                args = {}
+
+            if tc.function.name == "render_chart":
+                chart_args = args
+            elif tc.function.name == "run_query":
+                try:
+                    rows = execute_query(args.get("sql", "SELECT 1"))
+                    content = json.dumps(rows[:50])
+                except Exception as e:
+                    content = f"Query error: {e}"
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": content,
+                })
+
+        if chart_args:
+            sql = chart_args.get("sql", "")
+            chart_type = chart_args.get("chart_type", "bar")
+            try:
+                rows = execute_query(sql)
+                data = normalize_data(rows, chart_type)
+            except Exception as e:
+                return f"Chart query failed: {e}", None
+
+            raw_color = chart_args.get("color_rules")
+            color_rules = raw_color if isinstance(raw_color, dict) and raw_color else None
+
+            return chart_args.get("answer", "Here is your chart."), {
+                "type": chart_type,
+                "title": chart_args.get("title", ""),
+                "data": data,
+                "sql": sql,
+                "explanation": chart_args.get("explanation"),
+                "color_rules": color_rules,
+            }
+
+        messages.extend(tool_results)
+
+    return "Could not generate a chart for this query. Please try rephrasing.", None

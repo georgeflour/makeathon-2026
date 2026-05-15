@@ -67,3 +67,20 @@ htmlcov/
 # =========================
 *.log
 *.sqlite3
+
+# =========================
+# DuckDB
+# =========================
+# The dataset lives in the makeathon-NR2Dashboard submodule — don't double-track it
+backend/app/data/conversations.duckdb
+
+# =========================
+# Temp / generated
+# =========================
+docs/pptx_extracted/
+
+# =========================
+# Local tooling
+# =========================
+.claude/
+makeathon-NR2Dashboard/

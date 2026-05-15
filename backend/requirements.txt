@@ -5,6 +5,6 @@ pydantic-settings
 supabase
 azure-ai-projects
 azure-identity
-duckdb
+psycopg2-binary
 fastmcp
 openai

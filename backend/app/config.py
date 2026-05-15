@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     AZURE_AGENT_VERSION: str = "1"
     AZURE_DEPLOYMENT_NAME: str = "gpt-4o"
 
-    # DuckDB
-    DUCKDB_PATH: str = "app/data/conversations.duckdb"
+    # Supabase direct DB connection (for SQL queries)
+    SUPABASE_DB_URL: str = ""
 
     class Config:
         env_file = ".env"

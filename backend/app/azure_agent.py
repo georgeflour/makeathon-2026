@@ -12,27 +12,24 @@ from app.query_engine import execute_query, normalize_data
 _data_dir = Path(__file__).parent / "data"
 _SCHEMA = (_data_dir / "schema.md").read_text(encoding="utf-8")
 _METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
+_DIAGRAMS = (Path(__file__).parent.parent.parent / "diagrams.md").read_text(encoding="utf-8")
 
 SYSTEM_PROMPT = (
     "You are NR2Dashboard, a data analyst AI for SmartRep's banking voicebot analytics platform.\n"
-    "You have access to a DuckDB database with ~10,000 banking voicebot conversations over 90 days (Greek & English).\n\n"
+    "You have access to a PostgreSQL database (Supabase) with ~10,000 banking voicebot conversations over 90 days (Greek & English).\n\n"
     "== TOOLS ==\n"
-    "- run_query(sql): Execute a DuckDB SQL SELECT query. Returns rows as JSON. Always use this to verify SQL first.\n"
+    "- run_query(sql): Execute a PostgreSQL SQL SELECT query. Returns rows as JSON. Always use this to verify SQL first.\n"
     "- render_chart(...): Your FINAL step — always end by calling this, never return plain text.\n\n"
     "== SQL RULES ==\n"
-    "- Use ONLY these flat views: v_conversations, v_turns, v_evaluations, v_data_collection, v_tool_calls\n"
-    "- NEVER query conversations_raw directly\n"
+    "- Use ONLY these flat tables: conversations, turns, evaluations, data_collection, tool_calls\n"
     "- For bar/pie/line/area: SQL must return exactly 2 columns — first = label/x-axis (string), second = numeric value. Always alias both columns.\n"
     "- For kpi: return 1 row with 1 numeric column\n"
     "- Limit bar/pie results to 20 rows max\n"
     "- Always ALIAS computed columns: e.g. AVG(...) AS containment_rate\n"
-    "- When joining v_turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicate rows\n\n"
-    "== CHART SELECTION ==\n"
-    "- Rankings / distributions / comparisons across categories → bar\n"
-    "- Trends over time (date on x-axis) → line or area\n"
-    "- Proportions with 5 or fewer parts → pie\n"
-    "- Single summary metric → kpi\n"
-    "- More than 5 categories → bar, not pie\n\n"
+    "- When joining turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicate rows\n\n"
+    "== CHART SELECTION GUIDE ==\n"
+    + _DIAGRAMS
+    + "\n\n"
     "== RATES AND PERCENTAGES — CRITICAL ==\n"
     "- ALL rate/percentage values MUST be expressed as decimals between 0 and 1 (e.g. 0.76, not 76)\n"
     "- NEVER multiply by 100 in SQL — the frontend handles display formatting\n"
@@ -53,7 +50,7 @@ TOOLS = [
         "function": {
             "name": "run_query",
             "description": (
-                "Execute a DuckDB SQL SELECT query against the conversations database. "
+                "Execute a PostgreSQL SQL SELECT query against the Supabase conversations database. "
                 "Returns rows as a JSON array. Always test SQL here before calling render_chart."
             ),
             "parameters": {
@@ -88,7 +85,7 @@ TOOLS = [
                     "title": {"type": "string", "description": "Chart title"},
                     "explanation": {
                         "type": "string",
-                        "description": "Brief reason why this chart type was chosen",
+                        "description": "One short plain-language sentence describing what this chart shows (e.g. 'Containment rate per intent, sorted from highest to lowest.'). Do NOT mention why this chart type was chosen.",
                     },
                     "color_rules": {
                         "type": "object",
@@ -135,7 +132,7 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
                 model=settings.AZURE_DEPLOYMENT_NAME,
                 messages=messages,
                 tools=TOOLS,
-                tool_choice="auto",
+                tool_choice="required",
             )
         except Exception as e:
             return f"LLM error: {e}", None

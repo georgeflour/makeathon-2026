@@ -1,4 +1,5 @@
-import duckdb
+import psycopg2
+import psycopg2.extras
 from app.config import settings
 
 
@@ -7,11 +8,11 @@ def execute_query(sql: str) -> list[dict]:
     if not (stripped.startswith("SELECT") or stripped.startswith("WITH")):
         raise ValueError("Only SELECT queries are allowed")
 
-    con = duckdb.connect(settings.DUCKDB_PATH, read_only=True)
+    con = psycopg2.connect(settings.SUPABASE_DB_URL)
     try:
-        result = con.execute(sql)
-        cols = [d[0] for d in result.description]
-        return [dict(zip(cols, row)) for row in result.fetchall()]
+        with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql)
+            return [dict(row) for row in cur.fetchall()]
     finally:
         con.close()
 

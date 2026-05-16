@@ -12,3 +12,4 @@ openai
 langgraph
 langchain
 langchain-openai
+tiktoken

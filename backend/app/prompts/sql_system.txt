@@ -102,7 +102,17 @@ Use ONLY these five flat tables with the exact columns listed below.
 - bar/pie/line/area : return exactly 2 columns — label TEXT first, numeric value second. Always alias both.
 - kpi              : return 1 row with 1 numeric column.
 - heatmap          : return exactly 3 columns — row_label TEXT, col_label TEXT, value NUMERIC.
-- scatter          : return exactly 2 numeric columns — x first, y second.
+- scatter : return exactly 2 numeric columns aliased AS x_value (first) and y_value (second).
+            Always GROUP BY a bucketed version of x (e.g. ROUND(x/30.0)*30 AS x_value)
+            and aggregate y (AVG). Use LIMIT 200. No ORDER BY.
+            Example for AHT vs CSAT:
+            SELECT ROUND(call_duration_secs / 30.0) * 30 AS x_value,
+                   AVG(csat_score)                       AS y_value
+            FROM conversations
+            WHERE csat_score IS NOT NULL
+            GROUP BY 1
+            ORDER BY 1
+            LIMIT 200;
 - Limit bar/pie to 20 rows max: ORDER BY value DESC LIMIT 20.
 - For line charts  : ORDER BY date/time ASC.
 - Always ALIAS computed columns: COUNT(*) AS call_volume, AVG(...) AS containment_rate, etc.

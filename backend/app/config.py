@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     AZURE_AGENT_ID: str = ""
     AZURE_AGENT_VERSION: str = "1"
     AZURE_DEPLOYMENT_NAME: str = "gpt-4o"
+    AZURE_FAST_DEPLOYMENT_NAME: str = ""          # optional: faster/cheaper model for agents 1 & 3
+    AZURE_EMBEDDING_DEPLOYMENT_NAME: str = ""     # your text-embedding deployment name in Azure
     AZURE_OPENAI_API_KEY: str = ""
     AZURE_OPENAI_ENDPOINT: str = "https://makeathon-ai-foundry.cognitiveservices.azure.com/"
 
@@ -24,8 +26,3 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
-
-
-
-
-

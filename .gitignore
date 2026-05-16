@@ -84,3 +84,7 @@ docs/pptx_extracted/
 # =========================
 .claude/
 makeathon-NR2Dashboard/
+
+*.png
+*.jpg
+*.pptx

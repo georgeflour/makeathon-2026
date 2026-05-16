@@ -6,14 +6,29 @@ from openai import AzureOpenAI
 from app.config import settings
 from app.query_engine import execute_query, normalize_data
 
-_data_dir = Path(__file__).parent / "data"
-_SCHEMA = (_data_dir / "schema.md").read_text(encoding="utf-8")
-_METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
 _visuals_dir = Path(__file__).parent.parent.parent / "visuals"
 _CHARTS = (_visuals_dir / "charts.json").read_text(encoding="utf-8")
 _PALLETS = (_visuals_dir / "pallets.json").read_text(encoding="utf-8")
 _PROMPT = (_visuals_dir / "prompt.txt").read_text(encoding="utf-8")
+_data_dir = Path(__file__).parent / "data"
+_METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
 
+# Inline schema με τα σωστά table names (αντί για schema.md που έχει λάθος v_* ονόματα)
+_SCHEMA = """\
+Tables in PostgreSQL (Supabase):
+
+conversations: conversation_id(PK), agent_id, agent_name, user_id, status, start_time, start_date, start_hour, start_dow, call_duration_secs, cost_amount, cost_currency, call_direction, from_number, termination_reason, bot_version, transcript_summary, call_successful(success/failure/unknown), main_language(el/en), dv_user_id, segment(new/returning/premium/business), region(attica/thessaloniki/crete/patras/larissa/other_gr/international), preferred_language, channel_origin, csat_score(1-5 nullable), csat_collected(bool), outcome(resolved/escalated/abandoned/timeout)
+
+turns: id, conversation_id(FK), start_time, agent_id, main_language, role(agent/user), time_in_call_secs, message, detected_intent, intent_confidence, sentiment(positive/neutral/negative), turn_number, tool_calls_count
+
+evaluations: id, conversation_id(FK), start_time, agent_id, bot_version, main_language, segment, region, criterion_id(authentication_completed/intent_resolved/escalation_triggered/compliance_disclaimer_given/pii_handled_safely/fallback_count_acceptable/language_consistency/tool_call_success_rate), result(success/failure/unknown), rationale
+
+data_collection: id, conversation_id(FK), start_time, agent_id, bot_version, main_language, segment, region, field_id(customer_segment/region/declared_language/caller_line_type/account_type_referenced/transfer_amount_bucket/transfer_destination_country/card_type_referenced/loan_type_inquired/auth_method_used/self_service_completed/promised_callback/complaint_detected/topic_tags), value(text), rationale
+
+tool_calls: id, conversation_id(FK), start_time, agent_id, main_language, time_in_call_secs, tool_name, success(bool), latency_ms\
+"""
+
+# ORIGINAL PROMPT (full, ~22k tokens) — για σύγκριση performance
 SYSTEM_PROMPT = (
     "You are NR2Dashboard, a data analyst AI for SmartRep's banking voicebot analytics platform.\n"
     "You have access to a PostgreSQL database (Supabase) with ~10,000 banking voicebot conversations over 90 days (Greek & English).\n\n"
@@ -21,7 +36,8 @@ SYSTEM_PROMPT = (
     "- run_query(sql): Execute a PostgreSQL SQL SELECT query. Returns rows as JSON. Always use this to verify SQL first.\n"
     "- render_chart(...): Your FINAL step — always end by calling this, never return plain text.\n\n"
     "== SQL RULES ==\n"
-    "- Use ONLY these flat tables: conversations, turns, evaluations, data_collection, tool_calls\n"
+    "- Use ONLY these tables: conversations, turns, evaluations, data_collection, tool_calls\n"
+    "- DO NOT use conversations_raw, v_conversations, v_turns, or any other name\n"
     "- For bar/pie/line/area: SQL must return exactly 2 columns — first = label/x-axis (string), second = numeric value. Always alias both columns.\n"
     "- For kpi: return 1 row with 1 numeric column\n"
     "- Limit bar/pie results to 20 rows max\n"
@@ -139,20 +155,29 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
 
     messages.append({"role": "user", "content": user_message})
 
-    for _ in range(6):
+    has_query_result = False
+
+    for _ in range(4):
+        tool_choice = (
+            {"type": "function", "function": {"name": "render_chart"}}
+            if has_query_result
+            else "required"
+        )
         try:
             response = openai_client.chat.completions.create(
                 model=settings.AZURE_DEPLOYMENT_NAME,
                 messages=messages,
                 tools=TOOLS,
-                tool_choice="required",
+                tool_choice=tool_choice,
             )
         except Exception as e:
             return f"LLM error: {e}", None
 
         msg = response.choices[0].message
+        print(f"[agent] tool_calls: {[tc.function.name for tc in (msg.tool_calls or [])]}")
 
         if not msg.tool_calls:
+            print(f"[agent] no tool_calls, content: {msg.content}")
             return msg.content or "No response generated.", None
 
         messages.append(msg)
@@ -166,13 +191,18 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
             except json.JSONDecodeError:
                 args = {}
 
+            print(f"[agent] calling {tc.function.name} args={str(args)[:200]}")
+
             if tc.function.name == "render_chart":
                 chart_args = args
             elif tc.function.name == "run_query":
                 try:
                     rows = execute_query(args.get("sql", "SELECT 1"))
-                    content = json.dumps(rows[:50])
+                    print(f"[agent] query ok, {len(rows)} rows")
+                    content = json.dumps(rows[:50], default=str)
+                    has_query_result = True
                 except Exception as e:
+                    print(f"[agent] query error: {e}")
                     content = f"Query error: {e}"
                 tool_results.append({
                     "role": "tool",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, Sparkles } from "lucide-react";
+import { ArrowUp, Loader2, Sparkles, Copy, Check, Pencil } from "lucide-react";
 import { useChatContext } from "@/context/ChatContext";
 import { ChartPanel } from "@/components/ChartPanel";
 
@@ -15,10 +15,13 @@ const SUGGESTIONS = [
 ];
 
 export function ChatArea() {
-  const { activeChat, isLoading, sendMessage } = useChatContext();
+  const { activeChat, isLoading, sendMessage, editMessage } = useChatContext();
   const [input, setInput] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editRef = useRef<HTMLTextAreaElement>(null);
 
   const messages = activeChat?.messages ?? [];
 
@@ -46,6 +49,26 @@ export function ChatArea() {
     const ta = e.target;
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  };
+
+  const startEditing = (msgId: string, content: string) => {
+    setEditingMessageId(msgId);
+    setEditValue(content);
+    // Focus after render
+    setTimeout(() => {
+      if (editRef.current) {
+        editRef.current.focus();
+        editRef.current.style.height = "auto";
+        editRef.current.style.height = `${editRef.current.scrollHeight}px`;
+      }
+    }, 0);
+  };
+
+  const handleEditSubmit = () => {
+    if (!editingMessageId) return;
+    editMessage(editingMessageId, editValue);
+    setEditingMessageId(null);
+    setEditValue("");
   };
 
   return (
@@ -81,22 +104,82 @@ export function ChatArea() {
           <div className="max-w-3xl mx-auto w-full px-4 py-8 space-y-6">
             {messages.map((msg) =>
               msg.role === "user" ? (
-                <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-gray-100 dark:bg-[#2f2f2f] px-4 py-2.5">
-                    <p className="text-sm text-gray-900 dark:text-white/90 whitespace-pre-wrap leading-relaxed">
-                      {msg.content}
-                    </p>
+                <div key={msg.id} className="flex justify-end group">
+                  <div className="flex flex-col items-end gap-1.5 max-w-[80%]">
+                    {editingMessageId === msg.id ? (
+                      <div className="w-full min-w-[300px] flex flex-col gap-2 bg-gray-50 dark:bg-[#2f2f2f] rounded-2xl p-3 border border-gray-200 dark:border-white/10">
+                        <textarea
+                          ref={editRef}
+                          value={editValue}
+                          onChange={(e) => {
+                            setEditValue(e.target.value);
+                            e.target.style.height = "auto";
+                            e.target.style.height = `${e.target.scrollHeight}px`;
+                          }}
+                          className="w-full bg-transparent text-sm text-gray-900 dark:text-white/90 outline-none resize-none leading-relaxed"
+                          rows={1}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => setEditingMessageId(null)}
+                            className="px-3 py-1 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleEditSubmit}
+                            disabled={!editValue.trim() || isLoading}
+                            className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-900 dark:bg-white text-white dark:text-black hover:opacity-90 disabled:opacity-50"
+                          >
+                            Save & Submit
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="rounded-2xl rounded-tr-sm bg-gray-100 dark:bg-[#2f2f2f] px-4 py-2.5">
+                          <p className="text-sm text-gray-900 dark:text-white/90 whitespace-pre-wrap leading-relaxed">
+                            {msg.content}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => startEditing(msg.id, msg.content)}
+                            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60"
+                            title="Edit message"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(msg.content)}
+                            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60"
+                            title="Copy message"
+                          >
+                            <CopyAction text={msg.content} />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : (
-                <div key={msg.id} className="flex gap-3">
+                <div key={msg.id} className="flex gap-3 group">
                   <div className="h-7 w-7 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5 flex items-center justify-center">
                     <Sparkles className="h-3.5 w-3.5 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 dark:text-white/90 leading-relaxed whitespace-pre-wrap">
-                      {msg.content}
-                    </p>
+                    <div className="flex items-start justify-between gap-4">
+                      <p className="text-sm text-gray-800 dark:text-white/90 leading-relaxed whitespace-pre-wrap flex-1">
+                        {msg.content}
+                      </p>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(msg.content)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60 mt-[-2px]"
+                        title="Copy message"
+                      >
+                        <CopyAction text={msg.content} />
+                      </button>
+                    </div>
                     {msg.chart && (
                       <div className="mt-4">
                         <ChartPanel chart={msg.chart} />
@@ -168,6 +251,26 @@ export function ChatArea() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CopyAction({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div onClick={(e) => { e.stopPropagation(); handleCopy(); }}>
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
     </div>
   );
 }

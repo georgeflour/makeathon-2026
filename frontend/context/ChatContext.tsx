@@ -52,6 +52,7 @@ interface ChatContextValue {
   renameChat: (id: string, name: string) => void;
   deleteChat: (id: string) => Promise<void>;
   sendMessage: (text: string) => void;
+  editMessage: (id: string, text: string) => Promise<void>;
   pinChat: (id: string) => void;
   // Reports
   reports: Report[];
@@ -349,6 +350,81 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [syncChat]
   );
 
+  const editMessage = useCallback(
+    async (messageId: string, newText: string) => {
+      const chatId = activeChatIdRef.current;
+      if (!chatId) return;
+
+      const chat = chatsRef.current.find((c) => c.id === chatId);
+      if (!chat) return;
+
+      const messageIndex = chat.messages.findIndex((m) => m.id === messageId);
+      if (messageIndex === -1) return;
+
+      // Truncate messages after this message and update the edited message
+      const truncatedMessages = chat.messages.slice(0, messageIndex);
+      const editedUserMsg: Message = {
+        ...chat.messages[messageIndex],
+        content: newText,
+      };
+
+      const finalMessages = [...truncatedMessages, editedUserMsg];
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId
+            ? {
+                ...c,
+                messages: finalMessages,
+              }
+            : c
+        )
+      );
+
+      setIsLoading(true);
+
+      const history: ApiChatMessage[] = truncatedMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      try {
+        const data = await sendChatMessage(newText, history);
+        const assistantMsg: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: data.answer,
+          chart: data.chart,
+        };
+        setChats((prev) => {
+          const next = prev.map((c) =>
+            c.id === chatId ? { ...c, messages: [...finalMessages, assistantMsg] } : c
+          );
+          const updated = next.find((c) => c.id === chatId);
+          if (updated) syncChat(updated);
+          return next;
+        });
+      } catch (err) {
+        const errorMsg: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: err instanceof Error ? err.message : "Something went wrong.",
+        };
+        setChats((prev) => {
+          const next = prev.map((c) =>
+            c.id === chatId ? { ...c, messages: [...finalMessages, errorMsg] } : c
+          );
+          const updated = next.find((c) => c.id === chatId);
+          if (updated) syncChat(updated);
+          return next;
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [syncChat]
+  );
+
   // ── Reports ───────────────────────────────────────────────────────────────
 
   const addReport = useCallback(() => {
@@ -423,6 +499,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         renameChat,
         deleteChat,
         sendMessage,
+        editMessage,
         pinChat,
         reports,
         activeReportId,

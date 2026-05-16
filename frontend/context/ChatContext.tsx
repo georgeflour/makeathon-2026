@@ -35,6 +35,7 @@ export interface Chat {
 export interface Report {
   id: string;
   name: string;
+  description?: string;
   createdAt: number;
   pinned?: boolean;
   widgets?: Widget[];
@@ -135,6 +136,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const parsed = reportRows.map((r) => ({
           id: r.id,
           name: r.name,
+          description: r.description ?? "",
           createdAt: new Date(r.created_at).getTime(),
           pinned: r.pinned ?? false,
           widgets: r.widgets ?? [],
@@ -202,6 +204,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         id: report.id,
         user_id: user.id,
         name: report.name,
+        description: report.description ?? "",
         pinned: report.pinned ?? false,
         widgets: report.widgets ?? [],
         created_at: new Date(report.createdAt).toISOString(),
@@ -350,7 +353,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const addReport = useCallback(() => {
     const id = crypto.randomUUID();
-    const report: Report = { id, name: "New Report", createdAt: Date.now(), widgets: [] };
+    const report: Report = { id, name: "New Report", description: "Customise your report by dragging widgets from the right sidebar.", createdAt: Date.now(), widgets: [] };
     setReports((prev) => [report, ...prev]);
     setActiveReportId(id);
     syncReport(report);

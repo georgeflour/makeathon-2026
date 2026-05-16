@@ -3,8 +3,9 @@
 import { useChatContext } from "@/context/ChatContext";
 import { DashboardRightSidebar } from "@/components/DashboardRightSidebar";
 import { ChartPanel } from "@/components/ChartPanel";
-import { LayoutDashboard, Plus, Trash2 } from "lucide-react";
+import { LayoutDashboard, Plus, Trash2, Download } from "lucide-react";
 import type { Widget } from "@/lib/api";
+import { useState } from "react";
 
 export default function DashboardPage() {
   const {
@@ -15,8 +16,48 @@ export default function DashboardPage() {
     isRightSidebarOpen,
   } = useChatContext();
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const activeReport = reports.find((r) => r.id === activeReportId);
   const widgets = activeReport?.widgets || [];
+
+  const downloadPdf = async () => {
+    if (!activeReport) return;
+    setIsExporting(true);
+    try {
+      const { toPng } = await import("html-to-image");
+      const jsPDF = (await import("jspdf")).jsPDF;
+
+      const element = document.getElementById("report-content");
+      if (!element) return;
+
+      const dataUrl = await toPng(element, {
+        quality: 1,
+        pixelRatio: 2,
+        backgroundColor: document.documentElement.classList.contains("dark") ? "#111" : "#fff",
+        filter: (node) => {
+          const classList = (node as HTMLElement).classList;
+          return classList ? !classList.contains("no-export") : true;
+        },
+      });
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      
+      // Calculate height to maintain aspect ratio
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+      const pdfHeight = (img.height * pdfWidth) / img.width;
+
+      pdf.addImage(dataUrl, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${activeReport.name.replace(/\s+/g, "_")}.pdf`);
+    } catch (err) {
+      console.error("PDF Export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const onDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -78,23 +119,55 @@ export default function DashboardPage() {
         onDragOver={onDragOver}
         onDrop={onDrop}
       >
-        <div className="max-w-6xl mx-auto space-y-8">
+        <div className="max-w-6xl mx-auto space-y-6" id="report-content">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{activeReport.name}</h1>
-              <p className="text-sm text-gray-500 dark:text-white/40">
-                Customise your report by dragging widgets from the right sidebar.
-              </p>
-            </div>
-            {!isRightSidebarOpen && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex-1 max-w-2xl group">
+                <input
+                  value={activeReport.name}
+                  onChange={(e) => updateReport(activeReport.id, { name: e.target.value })}
+                  className="w-full text-3xl font-bold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 p-0 mb-1"
+                  placeholder="Report Name"
+                />
+              </div>
+            <div className="flex items-center gap-3 no-export">
               <button
-                onClick={() => setIsRightSidebarOpen(true)}
-                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-500/25"
+                onClick={downloadPdf}
+                disabled={isExporting}
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-white/80 text-sm font-semibold transition-all disabled:opacity-50"
               >
-                <Plus className="h-4 w-4" /> Add Widget
+                <Download className={`h-4 w-4 ${isExporting ? "animate-bounce" : ""}`} />
+                {isExporting ? "Exporting..." : "Download"}
               </button>
-            )}
+              {!isRightSidebarOpen && (
+                <button
+                  onClick={() => setIsRightSidebarOpen(true)}
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-semibold transition-all shadow-lg shadow-blue-500/25"
+                >
+                  <Plus className="h-4 w-4" /> Add Widget
+                </button>
+              )}
+            </div>
+          </div>
+
+            {/* Separator Line */}
+            <div className="h-[2px] w-full bg-gradient-to-r from-blue-500 via-violet-500 to-transparent rounded-full"></div>
+
+            <div className="max-w-2xl">
+              <textarea
+                value={activeReport.description || ""}
+                onChange={(e) => updateReport(activeReport.id, { description: e.target.value })}
+                rows={1}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = "auto";
+                  target.style.height = `${target.scrollHeight}px`;
+                }}
+                className="w-full text-sm text-gray-500 dark:text-white/40 bg-transparent border-none outline-none focus:ring-0 p-0 resize-none overflow-hidden min-h-[1.25rem]"
+                placeholder="Add a description for this report..."
+              />
+            </div>
           </div>
 
           {/* Grid Area */}
@@ -114,7 +187,7 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {widgets.map((widget) => (
                 <div key={widget.id} className="group relative">
-                  <div className="absolute top-4 right-14 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-4 right-14 z-10 opacity-0 group-hover:opacity-100 transition-opacity no-export">
                     <button
                       onClick={() => removeWidget(widget.id)}
                       className="p-1.5 rounded-lg bg-red-500 text-white shadow-lg shadow-red-500/20 hover:bg-red-600"
@@ -128,7 +201,7 @@ export default function DashboardPage() {
               
               {/* Drop Target Placeholder */}
               <div 
-                className="min-h-[300px] rounded-2xl border-2 border-dashed border-gray-200 dark:border-white/10 flex items-center justify-center transition-colors hover:border-blue-400/50 hover:bg-blue-50/10"
+                className="min-h-[300px] rounded-2xl border-2 border-dashed border-gray-200 dark:border-white/10 flex items-center justify-center transition-colors hover:border-blue-400/50 hover:bg-blue-50/10 no-export"
               >
                 <div className="text-center">
                   <Plus className="h-5 w-5 text-gray-300 dark:text-white/20 mx-auto mb-2" />

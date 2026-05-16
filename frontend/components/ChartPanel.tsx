@@ -46,7 +46,7 @@ function getBarColor(
 function formatValue(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  if (value > 0 && value < 1) return `${(value * 100).toFixed(1)}%`;
+  if (value > 0 && value <= 1) return `${(value * 100).toFixed(value === 1 ? 0 : 1)}%`;
   return value.toFixed(value % 1 === 0 ? 0 : 2);
 }
 
@@ -76,8 +76,15 @@ function computeYDomain(values: number[]): [number, number] {
 
   const dataMin = Math.min(...finite);
   const dataMax = Math.max(...finite);
-  const range = dataMax - dataMin;
+  
+  // Rate detection: if everything is bounded between 0 and 1, and max > 0.
+  const isLikelyRate = dataMin >= 0 && dataMax <= 1 && dataMax > 0;
+  
+  if (isLikelyRate) {
+    return [0, 1];
+  }
 
+  const range = dataMax - dataMin;
   if (range === 0) {
     const pad = Math.abs(dataMax) * 0.1 || 1;
     return [Math.max(0, dataMax - pad), dataMax + pad];

@@ -393,7 +393,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
     if history:
         recent = history[-4:]
         history_str = "\n\nRecent conversation context:\n" + "\n".join(
-            f"{m['role'].upper()}: {m['content'][:200]}" for m in recent
+            f"{m['role'].upper()}: {m['content']}" for m in recent
         )
 
     chain  = _ENHANCER_PROMPT | llm_fast

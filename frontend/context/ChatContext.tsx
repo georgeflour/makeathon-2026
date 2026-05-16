@@ -293,6 +293,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const history: ApiChatMessage[] = currentMessages.map((m) => ({
         role: m.role,
         content: m.content,
+        // Pass the full chart object so the backend can inject structured
+        // context (title, SQL, data rows) into the agent's prompt, enabling
+        // accurate follow-up questions about previous graphs.
+        ...(m.chart ? { chart: m.chart } : {}),
       }));
 
       const userMsg: Message = {
@@ -461,6 +465,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const history: ApiChatMessage[] = truncatedMessages.map((m) => ({
         role: m.role,
         content: m.content,
+        // Pass the full chart object so the backend agent can reference
+        // the actual data rows and SQL from previous charts.
+        ...(m.chart ? { chart: m.chart } : {}),
       }));
 
       // Create a streaming assistant placeholder — same as sendMessage
@@ -521,13 +528,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   prev.map((c) =>
                     c.id === chatId
                       ? {
-                          ...c,
-                          messages: c.messages.map((m) =>
-                            m.id === assistantMsgId
-                              ? { ...m, steps: [...(m.steps || []), data] }
-                              : m
-                          ),
-                        }
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === assistantMsgId
+                            ? { ...m, steps: [...(m.steps || []), data] }
+                            : m
+                        ),
+                      }
                       : c
                   )
                 );
@@ -536,13 +543,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   const next = prev.map((c) =>
                     c.id === chatId
                       ? {
-                          ...c,
-                          messages: c.messages.map((m) =>
-                            m.id === assistantMsgId
-                              ? { ...m, content: data.answer, chart: data.chart }
-                              : m
-                          ),
-                        }
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === assistantMsgId
+                            ? { ...m, content: data.answer, chart: data.chart }
+                            : m
+                        ),
+                      }
                       : c
                   );
                   const updated = next.find((c) => c.id === chatId);
@@ -570,13 +577,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             const next = prev.map((c) =>
               c.id === chatId
                 ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === assistantMsgId
-                        ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
-                        : m
-                    ),
-                  }
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
+                      : m
+                  ),
+                }
                 : c
             );
             const updated = next.find((c) => c.id === chatId);

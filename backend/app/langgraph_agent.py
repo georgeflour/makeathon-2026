@@ -135,7 +135,8 @@ _CHART_HINT_MAP: dict[str, list[str]] = {
     "arc":          ["Donut Chart", "Pie Chart"],
     "sunburst":     ["Sunburst Diagram"],
     "radial":       ["Radial Bar Chart", "Radial Column Chart"],
-    "kpi":          [],
+    "kpi":          [],   # single number — no chart docs needed
+    "none":         [],   # conversational/off-topic — no chart at all
     "scatter":      ["Scatterplot", "Bubble Chart"],
     "bubble":       ["Bubble Chart", "Scatterplot"],
     "heatmap":      ["Heatmap (Matrix)"],
@@ -173,7 +174,7 @@ def _retrieve_chart_docs(chart_hint: str) -> str:
 # LLM instances
 # ---------------------------------------------------------------------------
 _MAIN_MODEL = settings.AZURE_DEPLOYMENT_NAME
-_FAST_MODEL = settings.AZURE_FAST_DEPLOYMENT_NAME or _MAIN_MODEL  # ← fix: use 'or' not getattr
+_FAST_MODEL = settings.AZURE_FAST_DEPLOYMENT_NAME or _MAIN_MODEL
 
 
 def _make_llm(deployment: str, max_tokens: int) -> AzureChatOpenAI:
@@ -187,10 +188,8 @@ def _make_llm(deployment: str, max_tokens: int) -> AzureChatOpenAI:
     )
 
 
-
+llm_fast = _make_llm(_FAST_MODEL, max_tokens=500)    # agents 1 & 3
 llm_main = _make_llm(_MAIN_MODEL, max_tokens=1200)   # agents 2 & 4
-print(f"[DEBUG] MAIN={_MAIN_MODEL!r} FAST={_FAST_MODEL!r}")
-llm_fast = _make_llm(_FAST_MODEL, max_tokens=500)
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +404,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
     chart_hint   = "bar"
     language     = "en"
     breakdown_by = "null"
+    intent       = "analytical"
 
     try:
         parsed       = _parse_json(result.content)
@@ -413,15 +413,51 @@ def node_enhance_prompt(state: AgentState) -> dict:
         chart_hint   = parsed.get("chart_hint",   chart_hint)
         language     = parsed.get("language",     language)
         breakdown_by = parsed.get("breakdown_by", breakdown_by) or "null"
-        print(f"[enhance_prompt] → {enhanced!r} | metric={metric} | hint={chart_hint} | lang={language}")
+        intent       = parsed.get("intent",       "analytical")
+        print(f"[enhance_prompt] intent={intent!r} | → {enhanced!r} | metric={metric} | hint={chart_hint} | lang={language}")
     except Exception as e:
         print(f"[enhance_prompt] parse failed ({e}), using defaults")
+
+    # ------------------------------------------------------------------
+    # SHORT-CIRCUIT: conversational messages skip the entire pipeline.
+    # The enhancer already wrote the reply in enhanced_prompt.
+    # Pre-fill the whole state so the graph goes straight to assemble.
+    # ------------------------------------------------------------------
+    if intent == "conversational":
+        print("[enhance_prompt] conversational — returning direct answer, no chart")
+        return {
+            "enhanced_prompt": enhanced,
+            "metric":          "other",
+            "chart_hint":      "none",
+            "language":        language,
+            "breakdown_by":    "null",
+            "chart_docs":      "",
+            "vegalite_docs":   "",
+            "messages":        [],
+            "rag_context":     "",
+            "answer":            enhanced,
+            "sql":               "",
+            "sql_rows":          [],
+            "chart_type":        "none",
+            "chart_title":       "",
+            "chart_palette":     "tableau10",
+            "chart_explanation": "",
+            "color_rules":       None,
+            "judge_passed":      True,
+            "judge_feedback":    "",
+            "retry_count":       0,
+            "chart_dict":        None,
+        }
+
+    # ------------------------------------------------------------------
+    # ANALYTICAL — run RAG and continue to sql_agent + chart_agent
+    # ------------------------------------------------------------------
 
     # RAG 1: retrieve relevant chart type docs from charts.json
     chart_docs = _retrieve_chart_docs(chart_hint)
     print(f"[enhance_prompt] RAG charts.json: {len(chart_docs)} chars for hint={chart_hint!r}")
 
-    # RAG 2: retrieve relevant Vega-Lite spec docs from ChromaDB (if built)
+    # RAG 2: retrieve relevant Vega-Lite spec docs from Supabase pgvector
     vegalite_docs = ""
     if vegalite_is_built():
         vegalite_docs = retrieve_vegalite_docs(
@@ -455,8 +491,11 @@ def node_enhance_prompt(state: AgentState) -> dict:
 def node_sql_agent(state: AgentState) -> dict:
     print("[sql_agent] START")
 
-    if state.get("on_step"):
-        state["on_step"]({"step": "sql_generation", "message": "Querying the database...", "code": _STEP_CODE["sql_generation"]})
+    # No-op for conversational messages — answer already set by enhancer
+    if state.get("chart_hint") == "none":
+        print("[sql_agent] conversational — skipping")
+        return {"messages": [], "sql": "", "sql_rows": [], "answer": state.get("answer", "")}
+
     feedback  = state.get("judge_feedback", "")
     language  = state.get("language", "en")
     user_text = state["enhanced_prompt"]
@@ -542,8 +581,14 @@ def node_sql_agent(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 def node_chart_agent(state: AgentState) -> dict:
     print("[chart_agent] START")
-    if state.get("on_step"):
-        state["on_step"]({"step": "charting", "message": "Designing your visualization...", "code": _STEP_CODE["charting"]})
+
+    # No-op for conversational messages
+    if state.get("chart_hint") == "none":
+        print("[chart_agent] conversational — skipping")
+        return {
+            "chart_type": "none", "chart_title": "",
+            "chart_palette": "tableau10", "chart_explanation": "", "color_rules": None,
+        }
 
     feedback     = state.get("judge_feedback", "")
     feedback_str = (
@@ -617,8 +662,11 @@ def node_chart_agent(state: AgentState) -> dict:
 def node_judge(state: AgentState) -> dict:
     retry_count = state.get("retry_count", 0)
     print(f"[judge] START (retry #{retry_count})")
-    if state.get("on_step"):
-        state["on_step"]({"step": "judging", "message": "Verifying results...", "code": _STEP_CODE["judging"]})
+
+    # Auto-pass for conversational — already handled by enhancer
+    if state.get("chart_hint") == "none":
+        print("[judge] conversational — auto-pass")
+        return {"judge_passed": True, "judge_feedback": "", "retry_count": 0}
 
     if retry_count >= 3:
         print("[judge] max retries hit — forcing pass")
@@ -667,56 +715,71 @@ def node_judge(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 def node_assemble(state: AgentState) -> dict:
     print("[assemble] START")
-    raw_type = state.get("chart_type", "bar").lower().strip()
 
-    # Map chart_type string → canonical key used by normalize_data and frontend
-    # Groups share the same normalize_data path
+    raw_type = state.get("chart_type") or ""
+    answer   = state.get("answer") or ""
+    sql      = state.get("sql", "")
+    sql_rows = state.get("sql_rows", [])
+
+    # No chart — conversational, greeting, or non-analytical
+    if not raw_type or raw_type.lower().strip() in ("none", "null", "", "no chart", "no_chart"):
+        print("[assemble] no chart_type — returning text-only answer")
+        return {"answer": answer or "How can I help you?", "chart_dict": None}
+
+    # No SQL and no rows — text only
+    if not sql and not sql_rows:
+        print("[assemble] no sql/rows — returning text-only answer")
+        return {"answer": answer or "No data available for this query.", "chart_dict": None}
+
+    raw_type = raw_type.lower().strip()
+
     _TYPE_MAP = {
-        # arc family (pie/donut/sunburst/radial) → label+value
+        # arc / pie family
         "pie":          "pie",
         "donut":        "pie",
         "arc":          "pie",
         "sunburst":     "pie",
         "radial":       "pie",
         "radial_bar":   "pie",
-
-        # bar family → label+value  (stacked/grouped handled separately)
+        # bar family
         "bar":          "bar",
         "column":       "bar",
         "histogram":    "bar",
-        "span":         "span",
-        "range_bar":    "span",
+        "bullet":       "bar",
+        "population_pyramid": "bar",
+        "tick":         "bar",
+        "tally":        "bar",
+        "timeline":     "bar",
+        "gantt":        "bar",
+        "wordcloud":    "bar",
+        # stacked / grouped
         "stacked_bar":  "stacked_bar",
         "grouped_bar":  "grouped_bar",
         "multiset_bar": "grouped_bar",
-        "bullet":       "bar",
-        "population_pyramid": "bar",
-
-        # line family → label+value
+        # range
+        "span":         "span",
+        "range_bar":    "span",
+        # line family
         "line":         "line",
         "slope":        "line",
         "spiral":       "line",
         "radar":        "line",
-
-        # area family → label+value
+        # area family
         "area":         "area",
         "stacked_area": "stacked_area",
         "stream":       "area",
         "density":      "area",
         "violin":       "area",
-
-        # rect family → row+col+value
+        # rect / heatmap family
         "heatmap":      "heatmap",
         "calendar":     "heatmap",
         "rect":         "heatmap",
         "timetable":    "heatmap",
-
-        # point/circle family
+        # scatter / bubble
         "scatter":      "scatter",
         "bubble":       "bubble",
         "dot":          "scatter",
         "dot_matrix":   "scatter",
-
         # kpi
         "kpi":          "kpi",
         "text":         "kpi",      # single-value text mark
@@ -742,7 +805,7 @@ def node_assemble(state: AgentState) -> dict:
 
     chart_type = _TYPE_MAP.get(raw_type)
 
-    # Fuzzy fallback — match substrings
+    # Fuzzy fallback — substring match
     if chart_type is None:
         for key, mapped in _TYPE_MAP.items():
             if key in raw_type or raw_type in key:
@@ -750,23 +813,22 @@ def node_assemble(state: AgentState) -> dict:
                 break
 
     if chart_type is None:
-        chart_type = "bar"   # last resort
+        chart_type = "bar"
 
     print(f"[assemble] raw_type={raw_type!r} → chart_type={chart_type!r}")
 
-    sql = state.get("sql", "")
     try:
-        rows = state.get("sql_rows") or execute_query(sql)
+        rows = sql_rows or execute_query(sql)
         data = normalize_data(rows, chart_type)
     except Exception as e:
-        return {"answer": f"Could not build chart: {e}", "chart_dict": None}
+        return {"answer": answer or f"Could not build chart: {e}", "chart_dict": None}
 
     raw_color   = state.get("color_rules")
     color_rules = raw_color if isinstance(raw_color, dict) and raw_color else None
 
     print(f"[assemble] data_len={len(data) if isinstance(data, list) else 1}")
     return {
-        "answer": state.get("answer") or "Here is your chart.",
+        "answer": answer or "Here is your chart.",
         "chart_dict": {
             "type":        chart_type,
             "title":       state.get("chart_title",       ""),
@@ -777,6 +839,16 @@ def node_assemble(state: AgentState) -> dict:
             "palette":     state.get("chart_palette",     "tableau10"),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Routing: after enhance_prompt — bypass pipeline for conversational messages
+# ---------------------------------------------------------------------------
+def route_after_enhance(state: AgentState) -> str:
+    if state.get("chart_hint") == "none" and state.get("judge_passed") is True:
+        print("[route_after_enhance] → assemble (conversational bypass)")
+        return "assemble"
+    return "analytical"
 
 
 # ---------------------------------------------------------------------------
@@ -811,6 +883,7 @@ def _build_graph():
     graph.add_node("retry",          node_retry)
     graph.add_node("assemble",       node_assemble)
 
+    # Always go enhance → sql + chart in parallel (sql/chart no-op for conversational)
     graph.add_edge(START,            "enhance_prompt")
     graph.add_edge("enhance_prompt", "sql_agent")
     graph.add_edge("enhance_prompt", "chart_agent")

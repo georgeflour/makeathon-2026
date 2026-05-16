@@ -20,6 +20,8 @@ import {
 import type { ChartSpec } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { getPalette } from "@/lib/palettes";
+import { Plus, Check } from "lucide-react";
+import { useState } from "react";
 
 function getBarColor(
   value: number,
@@ -44,17 +46,51 @@ interface Props {
 
 export function ChartPanel({ chart }: Props) {
   const { type, title, data, color_rules, sql, explanation } = chart;
-  const { profile } = useAuth();
+  const { profile, updateSettings } = useAuth();
   const palette = getPalette(profile?.settings?.color_palette);
   const { colors, primary, above, below } = palette;
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavedLocal, setIsSavedLocal] = useState(false);
+
+  const savedWidgets = profile?.settings?.saved_widgets || [];
+  const alreadySaved = savedWidgets.some((w) => w.chart.sql === sql) || isSavedLocal;
+
+  const handleSaveWidget = async () => {
+    if (isSaving || alreadySaved || !profile) return;
+    setIsSaving(true);
+    
+    const newWidget = {
+      id: crypto.randomUUID(),
+      name: title || "New Widget",
+      chart,
+    };
+
+    const currentWidgets = profile.settings?.saved_widgets || [];
+    await updateSettings({ saved_widgets: [newWidget, ...currentWidgets] });
+    
+    setIsSaving(false);
+    setIsSavedLocal(true);
+  };
+
   return (
     <div className="w-full rounded-xl border bg-card shadow-sm overflow-hidden mt-2">
-      <div className="px-4 pt-4 pb-2">
-        <p className="font-semibold text-sm text-foreground">{title}</p>
-        {explanation && (
-          <p className="text-xs text-muted-foreground mt-0.5">{explanation}</p>
-        )}
+      <div className="px-4 pt-4 pb-2 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-semibold text-sm text-foreground">{title}</p>
+          {explanation && (
+            <p className="text-xs text-muted-foreground mt-0.5">{explanation}</p>
+          )}
+        </div>
+        <button
+          onClick={handleSaveWidget}
+          disabled={isSaving || alreadySaved}
+          title={alreadySaved ? "Already saved to dashboard" : "Save to dashboard"}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {alreadySaved ? <Check className="h-3 w-3 text-emerald-500" /> : <Plus className="h-3 w-3" />}
+          {alreadySaved ? "Saved" : "Save"}
+        </button>
       </div>
 
       <div className="px-2 pb-4">

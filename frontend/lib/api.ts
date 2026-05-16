@@ -35,7 +35,8 @@ export async function sendChatMessage(
   message: string,
   history: ChatMessage[]
 ): Promise<ChatResponse> {
-  const res = await fetch(`${API_URL}/api/chat`, {
+  // Always call our own Next.js proxy route — works from any device (no CORS issues)
+  const res = await fetch(`/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, history }),

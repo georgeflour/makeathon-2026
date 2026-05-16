@@ -1,135 +1,160 @@
 """
-langgraph_agent.py
-==================
+langgraph_agent.py  —  fully LangChain + LangGraph implementation
+=================================================================
 Drop-in replacement for azure_agent.py.
 
-Same public interface:
+Public interface (identical signature):
     call_agent(user_message, history) -> tuple[str, dict | None]
 
-LangGraph flow:
-    START
-      └─► enhance_prompt          (gpt-4o, max_tokens=300)
-            └─► [parallel]
-                  ├─► sql_agent   (gpt-4o, max_tokens=800)  — runs run_query tool
-                  └─► chart_agent (gpt-4o, max_tokens=500)  — decides chart spec
-            └─► judge             (gpt-4o, max_tokens=400)
-                  ├─► pass  → END
-                  └─► retry → sql_agent + chart_agent (max 3 loops)
-    END
+Stack:
+    - langchain-openai  →  AzureChatOpenAI  (LLM calls)
+    - langchain-core    →  ChatPromptTemplate, tool decorator
+    - langgraph         →  StateGraph, START, END, ToolNode
 
-To swap to a different deployment for any agent just set the
-corresponding env var:
-    AZURE_DEPLOYMENT_NAME        (default for all agents)
-    AZURE_FAST_DEPLOYMENT_NAME   (override for agents 1 & 3, optional)
+Flow:
+    START
+      └─► enhance_prompt   (fast model, structured JSON output)
+            ├─► sql_agent  (gpt-4o + run_query tool, agentic loop)
+            └─► chart_agent(fast model, structured JSON output)
+                  └─► judge (gpt-4o, structured JSON output)
+                        ├─► pass → assemble → END
+                        └─► fail → retry    → judge  (max 3 loops)
+
+Requirements (add to requirements.txt):
+    langgraph
+    langchain-openai
+    langchain-core
 """
 
 from __future__ import annotations
 
 import json
-import asyncio
 from pathlib import Path
-from typing import TypedDict, Optional, Any
+from typing import TypedDict, Optional, Annotated
+import operator
 
-from openai import AzureOpenAI
+from langchain_openai import AzureChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import ToolNode
 
 from app.config import settings
 from app.query_engine import execute_query, normalize_data
 
 # ---------------------------------------------------------------------------
-# Load static context files (same as original azure_agent.py)
+# Load static knowledge files (same paths as original azure_agent.py)
 # ---------------------------------------------------------------------------
-_data_dir = Path(__file__).parent / "data"
-_SCHEMA  = (_data_dir / "schema.md").read_text(encoding="utf-8")
-_METRICS = (_data_dir / "metrics_dictionary.md").read_text(encoding="utf-8")
-
+_data_dir    = Path(__file__).parent / "data"
 _visuals_dir = Path(__file__).parent.parent.parent / "visuals"
+
+_SCHEMA  = (_data_dir    / "schema.md").read_text(encoding="utf-8")
+_METRICS = (_data_dir    / "metrics_dictionary.md").read_text(encoding="utf-8")
 _CHARTS  = (_visuals_dir / "charts.json").read_text(encoding="utf-8")
 _PALLETS = (_visuals_dir / "pallets.json").read_text(encoding="utf-8")
 _PROMPT  = (_visuals_dir / "prompt.txt").read_text(encoding="utf-8")
 
 # ---------------------------------------------------------------------------
-# Azure OpenAI client (single client, all agents use same endpoint)
+# LangChain LLM instances — both point at your single Azure endpoint
+# AZURE_FAST_DEPLOYMENT_NAME is optional; falls back to AZURE_DEPLOYMENT_NAME
 # ---------------------------------------------------------------------------
-_client: AzureOpenAI | None = None
-
-def _get_client() -> AzureOpenAI:
-    global _client
-    if _client is None:
-        _client = AzureOpenAI(
-            api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version="2024-02-15-preview",
-            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-        )
-    return _client
-
-# Deployment names — override AZURE_FAST_DEPLOYMENT_NAME in .env for a cheaper
-# model (e.g. gpt-4o-mini) on agents 1 and 3 if available.
-_MAIN_MODEL = settings.AZURE_DEPLOYMENT_NAME          # gpt-4o
+_MAIN_MODEL = settings.AZURE_DEPLOYMENT_NAME
 _FAST_MODEL = getattr(settings, "AZURE_FAST_DEPLOYMENT_NAME", _MAIN_MODEL)
+
+
+def _make_llm(deployment: str, max_tokens: int) -> AzureChatOpenAI:
+    return AzureChatOpenAI(
+        azure_deployment=deployment,
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        api_key=settings.AZURE_OPENAI_API_KEY,
+        api_version="2024-02-15-preview",
+        max_tokens=max_tokens,
+        temperature=0,
+    )
+
+
+llm_fast = _make_llm(_FAST_MODEL, max_tokens=400)   # agents 1 & 3
+llm_main = _make_llm(_MAIN_MODEL, max_tokens=1000)  # agents 2 & 4
+
+# ---------------------------------------------------------------------------
+# LangChain Tool — run_query (used by SQL agent)
+# ---------------------------------------------------------------------------
+@tool
+def run_query(sql: str) -> str:
+    """
+    Execute a PostgreSQL SELECT query against the Supabase conversations database.
+    Returns rows as a JSON array (max 50 rows).
+    Always use this to validate SQL before finalising.
+    """
+    try:
+        rows = execute_query(sql)
+        return json.dumps(rows[:50])
+    except Exception as e:
+        return f"Query error: {e}"
+
+
+_tools         = [run_query]
+_tool_node     = ToolNode(_tools)
+llm_with_tools = llm_main.bind_tools(_tools)
 
 # ---------------------------------------------------------------------------
 # LangGraph state
 # ---------------------------------------------------------------------------
 class AgentState(TypedDict):
-    # Input
+    # input
     original_message: str
-    history: list[dict]
+    history:          list[dict]
 
-    # Set by agent 1
-    enhanced_prompt: str
-    rag_context: str              # chart-lib docs snippet
+    # agent 1 output
+    enhanced_prompt:  str
+    rag_context:      str
 
-    # Set by agent 2 (sql)
-    sql: str
-    sql_rows: list[dict]          # raw rows from execute_query
-    sql_error: str
+    # agent 2 output — Annotated[list, operator.add] lets langgraph
+    # append messages across nodes instead of overwriting
+    messages: Annotated[list, operator.add]
+    sql:      str
+    sql_rows: list[dict]
+    answer:   str
 
-    # Set by agent 3 (chart design)
-    chart_type: str
-    chart_title: str
-    chart_palette: str
+    # agent 3 output
+    chart_type:        str
+    chart_title:       str
+    chart_palette:     str
     chart_explanation: str
-    color_rules: Optional[dict]
+    color_rules:       Optional[dict]
 
-    # Set by agent 4 (judge)
-    judge_passed: bool
+    # agent 4 output
+    judge_passed:   bool
     judge_feedback: str
-    retry_count: int
+    retry_count:    int
 
-    # Final output
-    answer: str
+    # final output
     chart_dict: Optional[dict]
 
 
 # ---------------------------------------------------------------------------
-# System prompts — one per agent, tight and focused
+# Prompt templates
 # ---------------------------------------------------------------------------
-
-_PROMPT_ENHANCER_SYSTEM = """\
+_ENHANCER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """\
 You are a query normalizer for NR2Dashboard, a banking voicebot analytics dashboard.
-Your job is to rephrase the user's question into a precise analytical question and
-identify the key intent, metric, and dimensions.
+Rephrase the user question into a precise analytical question.
 
-Return a JSON object with exactly these keys:
-{
-  "enhanced_prompt": "<rewritten analytical question, clear and unambiguous>",
-  "metric": "<primary metric: containment_rate | csat | aht | volume | cost | escalation_rate | tool_success_rate>",
-  "dimensions": ["<dim1>", "<dim2>"],   // e.g. ["intent", "bot_version"]
-  "chart_hint": "<bar | line | pie | kpi | area | scatter>",
-  "language": "<el | en>"
-}
+Return ONLY a JSON object — no prose, no markdown fences:
+{{
+  "enhanced_prompt": "<rewritten question, same language as input>",
+  "metric": "<containment_rate|csat|aht|volume|cost|escalation_rate|tool_success_rate>",
+  "chart_hint": "<bar|line|pie|kpi|area|scatter>",
+  "language": "<el|en>"
+}}"""),
+    ("human", "{user_message}"),
+])
 
-Rules:
-- Keep enhanced_prompt in the same language as the user's input.
-- If the question is already clear, minimal changes are fine.
-- dimensions must be columns from: region, segment, bot_version, outcome, detected_intent, start_date, start_hour, criterion_id, tool_name
-- Return ONLY the JSON object, no prose, no markdown fences.
-"""
-
-_SQL_AGENT_SYSTEM = f"""\
-You are a PostgreSQL expert for NR2Dashboard, a banking voicebot analytics platform.
-Write a single correct SQL SELECT query and validate it using run_query.
+_SQL_SYSTEM = f"""\
+You are a PostgreSQL expert for NR2Dashboard.
+Write a correct SQL SELECT query and validate it using the run_query tool.
 
 == DATABASE SCHEMA ==
 {_SCHEMA}
@@ -138,129 +163,122 @@ Write a single correct SQL SELECT query and validate it using run_query.
 {_METRICS}
 
 == SQL RULES ==
-- Use ONLY these flat tables: conversations, turns, evaluations, data_collection, tool_calls
-- For bar/pie/line/area charts: return exactly 2 columns — label (string) and value (numeric). Always alias both.
-- For kpi: return 1 row with 1 numeric column.
-- Limit bar/pie results to 20 rows max.
-- Always ALIAS computed columns: e.g. AVG(...) AS containment_rate
-- When joining turns for intent: use a subquery with DISTINCT conversation_id to avoid duplicates.
-- ALL rates/percentages MUST be decimals 0-1 (e.g. 0.76, NOT 76). NEVER multiply by 100.
+- Available flat tables: conversations, turns, evaluations, data_collection, tool_calls
+- bar/pie/line/area: exactly 2 columns — label (string), value (numeric). Always alias.
+- kpi: 1 row, 1 numeric column.
+- Limit bar/pie to 20 rows max.
+- Always ALIAS computed columns: AVG(...) AS containment_rate
+- Joins on turns: use DISTINCT conversation_id subquery to avoid duplicates.
+- Rates/percentages: decimals 0-1 ONLY. NEVER multiply by 100.
 - Containment rate: AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END)
 
-== WORKFLOW ==
-1. Call run_query with your SQL to validate it.
-2. If it errors, fix and retry (max 4 attempts).
-3. When successful, return a JSON object:
-{{
-  "sql": "<final validated SQL>",
-  "answer": "<concise natural-language answer to the user's question>",
-  "row_count": <int>
-}}
-Return ONLY the JSON object after successful validation.
+== COLUMN ACCESS GUIDE ==
+The `conversations` table has these direct columns:
+  conversation_id, agent_id, user_id, call_successful, call_duration_secs,
+  main_language, bot_version, start_date, start_hour, start_dow, csat_score,
+  outcome, region, termination_reason
+
+The `conversations` table does NOT have a `segment` column directly.
+To get customer segment, join with data_collection:
+  JOIN data_collection dc ON dc.conversation_id = c.conversation_id
+  WHERE dc.field_id = 'customer_segment'
+  -- then use dc.value AS the segment label
+
+Similarly for other data_collection fields (region, declared_language, etc.):
+  field_id = 'region' | 'declared_language' | 'caller_line_type' | 'customer_segment'
+  -- use dc.value for the label
+
+The `turns` table has: conversation_id, role, time_in_call_secs, message,
+  detected_intent, intent_confidence, sentiment, turn_number
+
+The `evaluations` table has: conversation_id, criterion_id, result, rationale
+
+The `tool_calls` table has: conversation_id, turn_number, tool_name, success, latency_ms
+
+WORKFLOW:
+1. Call run_query to validate your SQL.
+2. If it errors with "column does not exist", check the COLUMN ACCESS GUIDE above and fix.
+3. Fix and retry on errors (max 4 attempts).
+4. When rows come back cleanly, stop calling tools and reply with plain text:
+   FINAL_SQL: <the validated sql>
+   ANSWER: <concise natural-language answer in the same language as the question>
 """
 
-_CHART_AGENT_SYSTEM = f"""\
-You are a data visualization expert for NR2Dashboard.
-Given an analytical question and chart context, decide the best chart specification.
+# Use mustache template_format so that embedded JSON { } from _CHARTS / _PALLETS
+# are treated as literal characters (not template variables). Mustache variables
+# use {{double_braces}} syntax, which doesn't conflict with JSON content.
+_CHART_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", f"""\
+You are a data visualisation expert for NR2Dashboard.
+Given the analytical question and context, decide the best chart specification.
 
-== CHART SELECTION GUIDE ==
+== CHART GUIDE ==
 {_CHARTS}
 
 == PALETTE GUIDE ==
 {_PALLETS}
 
-== CHART CREATION RULES ==
-{_PROMPT}
+== RULES ==
+- Values 0-1 are rates — never multiply by 100.
+- Containment rate threshold = 0.85; always add color_rules for containment charts.
 
-== RATES DISPLAY RULE ==
-Values 0-1 are rates/percentages — the frontend formats them. Never multiply by 100.
-Containment rate threshold is 0.85 — always add color_rules for containment charts.
-
-Return a JSON object with exactly these keys:
+Return ONLY a JSON object — no prose, no markdown fences:
 {{
-  "chart_type": "<bar | line | area | pie | kpi | scatter>",
-  "title": "<short descriptive chart title>",
+  "chart_type": "<bar|line|area|pie|kpi|scatter>",
+  "title": "<short descriptive title>",
   "palette": "<vega-lite-name from PALETTE GUIDE>",
   "explanation": "<one sentence describing what the chart shows>",
-  "color_rules": null  // or {{"threshold": 0.85, "above": "purple", "below": "orange"}} for containment
+  "color_rules": null
 }}
+For containment: set color_rules to {{"threshold": 0.85, "above": "purple", "below": "orange"}}"""),
+    ("human", "Question: {{enhanced_prompt}}\nContext: {{rag_context}}{{feedback}}"),
+], template_format="mustache")
 
-Return ONLY the JSON object, no prose, no markdown fences.
-"""
-
-_JUDGE_SYSTEM = """\
+_JUDGE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """\
 You are a quality-control judge for NR2Dashboard chart responses.
-You receive: the user's question, the SQL query, sample rows, and the chart spec.
-Evaluate whether the response correctly and clearly answers the question.
+Evaluate whether the SQL result and chart spec correctly answer the user question.
 
-Score on these criteria (each pass/fail):
-1. sql_correct      — does the SQL logically answer the question?
-2. shape_match      — do the row columns match the chart_type requirements?
-3. data_non_empty   — are there rows (not 0)?
-4. chart_appropriate — is the chart type a good fit for the data?
-5. answer_relevant  — does the answer text address the question?
-
-Return a JSON object:
-{
-  "passed": true | false,
-  "score": <int 0-5>,
-  "failures": ["<criterion_id>", ...],
-  "feedback": "<one sentence of actionable feedback if failed, else empty string>"
-}
+Score criteria (each pass/fail):
+1. sql_correct       — SQL logically answers the question
+2. shape_match       — columns match chart_type requirements
+3. data_non_empty    — rows were returned
+4. chart_appropriate — chart type fits the data
+5. answer_relevant   — answer text addresses the question
 
 Pass threshold: score >= 4 AND sql_correct = true AND data_non_empty = true.
-Return ONLY the JSON object.
-"""
+
+Return ONLY a JSON object — no prose, no markdown fences:
+{{
+  "passed": true|false,
+  "score": <0-5>,
+  "failures": ["<criterion>"],
+  "feedback": "<one actionable sentence if failed, else empty string>"
+}}"""),
+    ("human", """\
+User question: {original_message}
+
+SQL: {sql}
+
+Sample rows (first 5):
+{sample_rows}
+
+Chart spec:
+  type: {chart_type}
+  title: {chart_title}
+  explanation: {chart_explanation}
+
+Answer: {answer}"""),
+])
 
 # ---------------------------------------------------------------------------
-# Tool definition for SQL agent (run_query only)
+# Helper: strip markdown fences and parse JSON
 # ---------------------------------------------------------------------------
-_SQL_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "run_query",
-            "description": "Execute a PostgreSQL SELECT query. Returns rows as JSON array.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "sql": {"type": "string", "description": "Valid PostgreSQL SELECT query"}
-                },
-                "required": ["sql"],
-            },
-        },
-    }
-]
-
-# ---------------------------------------------------------------------------
-# Helper: call OpenAI and get text response
-# ---------------------------------------------------------------------------
-def _chat(system: str, user: str, model: str, max_tokens: int,
-          tools=None, tool_choice=None) -> tuple[str, list]:
-    """Single chat completion. Returns (text_content, tool_calls)."""
-    client = _get_client()
-    kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user},
-        ],
-        "max_tokens": max_tokens,
-    }
-    if tools:
-        kwargs["tools"] = tools
-        kwargs["tool_choice"] = tool_choice or "auto"
-
-    resp = client.chat.completions.create(**kwargs)
-    msg = resp.choices[0].message
-    return (msg.content or ""), (msg.tool_calls or [])
-
-
 def _parse_json(text: str) -> dict:
-    """Strip markdown fences and parse JSON."""
     text = text.strip()
     if text.startswith("```"):
-        text = text.split("```")[1]
+        parts = text.split("```")
+        text  = parts[1] if len(parts) > 1 else text
         if text.startswith("json"):
             text = text[4:]
     return json.loads(text.strip())
@@ -268,200 +286,177 @@ def _parse_json(text: str) -> dict:
 
 # ---------------------------------------------------------------------------
 # Node 1 — Prompt enhancer
+# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_enhance_prompt(state: AgentState) -> dict:
-    user_msg = state["original_message"]
-
-    # RAG context: inject full chart guide (already in system prompt of chart agent,
-    # but we also pass a summary hint here for the SQL agent to use)
-    rag_context = (
-        f"Available chart types: bar, line, area, pie, kpi, scatter.\n"
-        f"Palette options: tableau10, viridis, redblue, spectral, blues, dark2.\n"
-    )
+    print("[node_enhance_prompt] START")
+    chain  = _ENHANCER_PROMPT | llm_fast
+    result = chain.invoke({"user_message": state["original_message"]})
 
     try:
-        text, _ = _chat(
-            system=_PROMPT_ENHANCER_SYSTEM,
-            user=user_msg,
-            model=_FAST_MODEL,
-            max_tokens=300,
+        parsed      = _parse_json(result.content)
+        enhanced    = parsed.get("enhanced_prompt", state["original_message"])
+        chart_hint  = parsed.get("chart_hint", "bar")
+        language    = parsed.get("language", "en")
+        rag_context = (
+            f"Suggested chart: {chart_hint}. Language: {language}. "
+            f"Available palettes: tableau10, viridis, redblue, spectral, blues, dark2."
         )
-        parsed = _parse_json(text)
-        enhanced = parsed.get("enhanced_prompt", user_msg)
-        chart_hint = parsed.get("chart_hint", "bar")
-        language = parsed.get("language", "en")
-        rag_context += f"Suggested chart type: {chart_hint}. Language: {language}."
-        print(f"[node_enhance_prompt] Extracted intent/metrics -> Enhanced: {enhanced}")
+        print(f"[node_enhance_prompt] Enhanced: {enhanced!r}")
     except Exception as e:
-        print(f"[enhance_prompt] fallback due to: {e}")
-        enhanced = user_msg
+        print(f"[node_enhance_prompt] Parse failed: {e}, using original")
+        enhanced    = state["original_message"]
+        rag_context = "Suggested chart: bar. Language: en."
 
     return {
         "enhanced_prompt": enhanced,
-        "rag_context": rag_context,
+        "rag_context":     rag_context,
+        "messages":        [],  # reset message list for sql agent
     }
 
 
 # ---------------------------------------------------------------------------
-# Node 2 — SQL agent (with run_query tool loop)
+# Node 2 — SQL agent
+# (LangChain: AzureChatOpenAI.bind_tools → ToolNode agentic loop)
 # ---------------------------------------------------------------------------
 def node_sql_agent(state: AgentState) -> dict:
-    prompt = state["enhanced_prompt"]
-    feedback = state.get("judge_feedback", "")
-
-    user_content = f"Question: {prompt}"
+    print("[node_sql_agent] START")
+    feedback  = state.get("judge_feedback", "")
+    user_text = state["enhanced_prompt"]
     if feedback:
-        user_content += f"\n\nPrevious attempt failed. Judge feedback: {feedback}\nPlease fix accordingly."
+        user_text += f"\n\nPrevious attempt failed. Judge feedback: {feedback}\nPlease fix."
 
     messages = [
-        {"role": "system", "content": _SQL_AGENT_SYSTEM},
-        {"role": "user",   "content": user_content},
+        SystemMessage(content=_SQL_SYSTEM),
+        HumanMessage(content=user_text),
     ]
-    client = _get_client()
 
-    sql_result = ""
-    sql_rows: list[dict] = []
+    sql    = ""
     answer = ""
 
-    for attempt in range(4):
-        resp = client.chat.completions.create(
-            model=_MAIN_MODEL,
-            messages=messages,
-            tools=_SQL_TOOLS,
-            tool_choice="auto",
-            max_tokens=800,
-        )
-        msg = resp.choices[0].message
-        messages.append(msg)
+    # Agentic tool-use loop — max 6 iterations
+    for i in range(6):
+        print(f"[node_sql_agent] LLM call #{i+1}")
+        response = llm_with_tools.invoke(messages)
+        messages.append(response)
 
-        if msg.tool_calls:
-            for tc in msg.tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments)
-                    sql_result = args.get("sql", "")
-                    rows = execute_query(sql_result)
-                    sql_rows = rows[:50]
-                    content = json.dumps(sql_rows)
-                except Exception as e:
-                    content = f"Query error: {e}"
-                    sql_rows = []
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": content,
-                })
-        else:
-            # Model returned final JSON
-            try:
-                parsed = _parse_json(msg.content or "{}")
-                sql_result = parsed.get("sql", sql_result)
-                answer = parsed.get("answer", "")
-                if not sql_rows and sql_result:
-                    sql_rows = execute_query(sql_result)[:50]
-            except Exception:
-                answer = msg.content or ""
+        # No tool calls → model is done
+        if not response.tool_calls:
+            content = response.content or ""
+            for line in content.splitlines():
+                if line.startswith("FINAL_SQL:"):
+                    sql = line.replace("FINAL_SQL:", "").strip()
+                elif line.startswith("ANSWER:"):
+                    answer = line.replace("ANSWER:", "").strip()
+            if not answer:
+                answer = content
+            print(f"[node_sql_agent] Done. sql={sql[:60]!r}")
             break
 
-    print(f"[node_sql_agent] Final SQL (attempt {attempt+1}): {sql_result}")
-    if answer:
-        print(f"[node_sql_agent] Generated answer snippet.")
+        # Execute all tool calls via LangChain ToolNode
+        print(f"[node_sql_agent] Running tool calls: {[tc['name'] for tc in response.tool_calls]}")
+        tool_output = _tool_node.invoke({"messages": messages})
+        messages.extend(tool_output["messages"])
+
+        # Track the last SQL that was submitted
+        for tc in response.tool_calls:
+            if tc["name"] == "run_query":
+                sql = tc["args"].get("sql", sql)
+
+    # Fetch rows for judge + assembler
+    sql_rows: list[dict] = []
+    if sql:
+        try:
+            sql_rows = execute_query(sql)[:50]
+            print(f"[node_sql_agent] Fetched {len(sql_rows)} rows")
+        except Exception as e:
+            print(f"[node_sql_agent] Row fetch failed: {e}")
 
     return {
-        "sql": sql_result,
+        "messages": messages,
+        "sql":      sql,
         "sql_rows": sql_rows,
-        "sql_error": "" if sql_rows else "No rows returned",
-        "answer": answer,
+        "answer":   answer,
     }
 
 
 # ---------------------------------------------------------------------------
 # Node 3 — Chart design agent
+# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_chart_agent(state: AgentState) -> dict:
-    prompt = state["enhanced_prompt"]
-    rag = state.get("rag_context", "")
-    feedback = state.get("judge_feedback", "")
-
-    user_content = (
-        f"Question: {prompt}\n\n"
-        f"Context: {rag}"
+    feedback     = state.get("judge_feedback", "")
+    feedback_str = (
+        f"\n\nJudge feedback: {feedback}\nPlease fix the chart spec."
+        if feedback else ""
     )
-    if feedback:
-        user_content += f"\n\nPrevious attempt failed. Judge feedback: {feedback}\nPlease fix the chart spec."
+
+    chain  = _CHART_PROMPT | llm_fast
+    result = chain.invoke({
+        "enhanced_prompt": state["enhanced_prompt"],
+        "rag_context":     state.get("rag_context", ""),
+        "feedback":        feedback_str,
+    })
 
     try:
-        text, _ = _chat(
-            system=_CHART_AGENT_SYSTEM,
-            user=user_content,
-            model=_FAST_MODEL,
-            max_tokens=500,
-        )
-        parsed = _parse_json(text)
-    except Exception as e:
-        print(f"[chart_agent] fallback due to: {e}")
+        parsed = _parse_json(result.content)
+    except Exception:
         parsed = {
-            "chart_type": "bar",
-            "title": prompt[:60],
-            "palette": "tableau10",
+            "chart_type":  "bar",
+            "title":       state["enhanced_prompt"][:60],
+            "palette":     "tableau10",
             "explanation": "",
             "color_rules": None,
         }
 
-    print(f"[node_chart_agent] Chose chart: {parsed.get('chart_type')} | Palette: {parsed.get('palette')}")
-
     return {
-        "chart_type":      parsed.get("chart_type", "bar"),
-        "chart_title":     parsed.get("title", ""),
-        "chart_palette":   parsed.get("palette", "tableau10"),
+        "chart_type":        parsed.get("chart_type", "bar"),
+        "chart_title":       parsed.get("title", ""),
+        "chart_palette":     parsed.get("palette", "tableau10"),
         "chart_explanation": parsed.get("explanation", ""),
-        "color_rules":     parsed.get("color_rules"),
+        "color_rules":       parsed.get("color_rules"),
     }
 
 
 # ---------------------------------------------------------------------------
 # Node 4 — Judge
+# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_judge(state: AgentState) -> dict:
     retry_count = state.get("retry_count", 0)
 
-    # Hard stop — don't loop forever
+    # Hard stop at 3 retries — pass through whatever we have
     if retry_count >= 3:
-        return {"judge_passed": True, "judge_feedback": ""}
+        return {
+            "judge_passed":   True,
+            "judge_feedback": "",
+            "retry_count":    retry_count,
+        }
 
     sample = json.dumps(state.get("sql_rows", [])[:5], indent=2)
-    user_content = (
-        f"User question: {state['original_message']}\n\n"
-        f"SQL:\n{state.get('sql', '')}\n\n"
-        f"Sample rows (first 5):\n{sample}\n\n"
-        f"Chart spec:\n"
-        f"  type: {state.get('chart_type')}\n"
-        f"  title: {state.get('chart_title')}\n"
-        f"  explanation: {state.get('chart_explanation')}\n\n"
-        f"Answer text: {state.get('answer', '')}"
-    )
+    chain  = _JUDGE_PROMPT | llm_main
+    result = chain.invoke({
+        "original_message":  state["original_message"],
+        "sql":               state.get("sql", ""),
+        "sample_rows":       sample,
+        "chart_type":        state.get("chart_type", ""),
+        "chart_title":       state.get("chart_title", ""),
+        "chart_explanation": state.get("chart_explanation", ""),
+        "answer":            state.get("answer", ""),
+    })
 
     try:
-        text, _ = _chat(
-            system=_JUDGE_SYSTEM,
-            user=user_content,
-            model=_MAIN_MODEL,
-            max_tokens=400,
-        )
-        parsed = _parse_json(text)
-        passed = parsed.get("passed", True)
+        parsed   = _parse_json(result.content)
+        passed   = bool(parsed.get("passed", True))
         feedback = parsed.get("feedback", "")
-    except Exception as e:
-        print(f"[judge] parse error: {e} — defaulting to pass")
-        passed = True
+    except Exception:
+        passed   = True
         feedback = ""
 
-    print(f"[node_judge] Passed: {passed} | Feedback: {feedback} (Retry #{retry_count})")
-
     return {
-        "judge_passed": passed,
+        "judge_passed":   passed,
         "judge_feedback": feedback,
-        "retry_count": retry_count + (0 if passed else 1),
+        "retry_count":    retry_count + (0 if passed else 1),
     }
 
 
@@ -469,105 +464,86 @@ def node_judge(state: AgentState) -> dict:
 # Node 5 — Assemble final output
 # ---------------------------------------------------------------------------
 def node_assemble(state: AgentState) -> dict:
-    chart_type_raw = state.get("chart_type", "bar").lower()
-    if "pie" in chart_type_raw:
-        chart_type = "pie"
-    elif "line" in chart_type_raw:
-        chart_type = "line"
-    elif "area" in chart_type_raw:
-        chart_type = "area"
-    elif "kpi" in chart_type_raw:
-        chart_type = "kpi"
-    elif "scatter" in chart_type_raw:
-        chart_type = "scatter"
-    else:
-        chart_type = "bar"
+    raw_type = state.get("chart_type", "bar").lower()
+    if   "pie"     in raw_type: chart_type = "pie"
+    elif "line"    in raw_type: chart_type = "line"
+    elif "area"    in raw_type: chart_type = "area"
+    elif "kpi"     in raw_type: chart_type = "kpi"
+    elif "scatter" in raw_type: chart_type = "scatter"
+    else:                       chart_type = "bar"
 
     sql = state.get("sql", "")
     try:
         rows = state.get("sql_rows") or execute_query(sql)
         data = normalize_data(rows, chart_type)
     except Exception as e:
-        return {
-            "answer": f"Could not build chart: {e}",
-            "chart_dict": None,
-        }
+        return {"answer": f"Could not build chart: {e}", "chart_dict": None}
 
-    raw_color = state.get("color_rules")
+    raw_color   = state.get("color_rules")
     color_rules = raw_color if isinstance(raw_color, dict) and raw_color else None
 
-    chart_dict = {
-        "type":        chart_type,
-        "title":       state.get("chart_title", ""),
-        "data":        data,
-        "sql":         sql,
-        "explanation": state.get("chart_explanation", ""),
-        "color_rules": color_rules,
-        "palette":     state.get("chart_palette", "tableau10"),
-    }
-
     return {
-        "answer":     state.get("answer") or "Here is your chart.",
-        "chart_dict": chart_dict,
+        "answer": state.get("answer") or "Here is your chart.",
+        "chart_dict": {
+            "type":        chart_type,
+            "title":       state.get("chart_title", ""),
+            "data":        data,
+            "sql":         sql,
+            "explanation": state.get("chart_explanation", ""),
+            "color_rules": color_rules,
+            "palette":     state.get("chart_palette", "tableau10"),
+        },
     }
 
 
 # ---------------------------------------------------------------------------
-# Parallel fan-out: run sql + chart agents concurrently
+# Retry node — re-runs sql + chart agents with judge feedback
+# (sequential, no asyncio — safe inside uvicorn's event loop)
 # ---------------------------------------------------------------------------
-def node_parallel(state: AgentState) -> dict:
-    """Run sql_agent and chart_agent in parallel using asyncio."""
-    async def _run():
-        loop = asyncio.get_event_loop()
-        sql_fut   = loop.run_in_executor(None, node_sql_agent,   state)
-        chart_fut = loop.run_in_executor(None, node_chart_agent, state)
-        sql_result, chart_result = await asyncio.gather(sql_fut, chart_fut)
-        return {**sql_result, **chart_result}
-
-    try:
-        loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(_run())
-        loop.close()
-    except Exception:
-        # Fallback: sequential
-        result = {**node_sql_agent(state), **node_chart_agent(state)}
-    return result
+def node_retry(state: AgentState) -> dict:
+    sql_result   = node_sql_agent(state)
+    chart_result = node_chart_agent(state)
+    return {**sql_result, **chart_result}
 
 
 # ---------------------------------------------------------------------------
-# Routing function after judge
+# Routing: after judge → pass or retry
 # ---------------------------------------------------------------------------
 def route_after_judge(state: AgentState) -> str:
-    if state.get("judge_passed", True):
-        return "assemble"
-    return "parallel"   # retry both agents with feedback
+    return "assemble" if state.get("judge_passed", True) else "retry"
 
 
 # ---------------------------------------------------------------------------
-# Build the LangGraph
+# Build and compile the LangGraph
 # ---------------------------------------------------------------------------
-def _build_graph() -> Any:
+def _build_graph():
     graph = StateGraph(AgentState)
 
     graph.add_node("enhance_prompt", node_enhance_prompt)
-    graph.add_node("parallel",       node_parallel)
+    graph.add_node("sql_agent",      node_sql_agent)
+    graph.add_node("chart_agent",    node_chart_agent)
     graph.add_node("judge",          node_judge)
+    graph.add_node("retry",          node_retry)
     graph.add_node("assemble",       node_assemble)
 
     graph.add_edge(START,            "enhance_prompt")
-    graph.add_edge("enhance_prompt", "parallel")
-    graph.add_edge("parallel",       "judge")
+    graph.add_edge("enhance_prompt", "sql_agent")
+    graph.add_edge("enhance_prompt", "chart_agent")
+    graph.add_edge("sql_agent",      "judge")
+    graph.add_edge("chart_agent",    "judge")
     graph.add_conditional_edges(
         "judge",
         route_after_judge,
-        {"assemble": "assemble", "parallel": "parallel"},
+        {"assemble": "assemble", "retry": "retry"},
     )
+    graph.add_edge("retry",    "judge")
     graph.add_edge("assemble", END)
 
     return graph.compile()
 
 
 _graph = None
+
 
 def _get_graph():
     global _graph
@@ -577,9 +553,12 @@ def _get_graph():
 
 
 # ---------------------------------------------------------------------------
-# Public interface — identical signature to the original azure_agent.py
+# Public interface — identical signature to original azure_agent.py
 # ---------------------------------------------------------------------------
-def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[str, dict | None]:
+def call_agent(
+    user_message: str,
+    history: list[dict] | None = None,
+) -> tuple[str, dict | None]:
     """
     Drop-in replacement for the original call_agent.
     Returns (answer: str, chart_dict: dict | None).
@@ -588,27 +567,27 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
         return "Azure AI is not configured.", None
 
     initial_state: AgentState = {
-        "original_message": user_message,
-        "history":          history or [],
-        "enhanced_prompt":  "",
-        "rag_context":      "",
-        "sql":              "",
-        "sql_rows":         [],
-        "sql_error":        "",
-        "chart_type":       "bar",
-        "chart_title":      "",
-        "chart_palette":    "tableau10",
-        "chart_explanation":"",
-        "color_rules":      None,
-        "judge_passed":     False,
-        "judge_feedback":   "",
-        "retry_count":      0,
-        "answer":           "",
-        "chart_dict":       None,
+        "original_message":  user_message,
+        "history":           history or [],
+        "enhanced_prompt":   "",
+        "rag_context":       "",
+        "messages":          [],
+        "sql":               "",
+        "sql_rows":          [],
+        "answer":            "",
+        "chart_type":        "bar",
+        "chart_title":       "",
+        "chart_palette":     "tableau10",
+        "chart_explanation": "",
+        "color_rules":       None,
+        "judge_passed":      False,
+        "judge_feedback":    "",
+        "retry_count":       0,
+        "chart_dict":        None,
     }
 
     try:
-        final_state = _get_graph().invoke(initial_state)
-        return final_state.get("answer", "No answer generated."), final_state.get("chart_dict")
+        final = _get_graph().invoke(initial_state)
+        return final.get("answer", "No answer generated."), final.get("chart_dict")
     except Exception as e:
         return f"Agent error: {e}", None

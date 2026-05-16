@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import type { Widget } from "@/lib/api";
 
 export interface UserProfile {
   id: string;
@@ -12,6 +13,7 @@ export interface UserProfile {
   settings: {
     color_palette?: string;
     theme?: string;
+    saved_widgets?: Widget[];
   };
 }
 

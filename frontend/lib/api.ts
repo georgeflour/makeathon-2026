@@ -20,6 +20,12 @@ export interface ChartSpec {
   color_rules?: ColorRules;
 }
 
+export interface Widget {
+  id: string;
+  name: string;
+  chart: ChartSpec;
+}
+
 export interface ChatResponse {
   answer: string;
   chart?: ChartSpec;

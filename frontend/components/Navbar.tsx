@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Moon, Sparkles, Sun, Menu } from "lucide-react";
+import { Moon, Sparkles, Sun, Menu, Grid3X3 } from "lucide-react";
 import { useChatContext } from "@/context/ChatContext";
 
 interface NavbarProps {
@@ -12,7 +12,8 @@ interface NavbarProps {
 
 export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
   const pathname = usePathname();
-  const { isSidebarOpen, setIsSidebarOpen } = useChatContext();
+  const { isSidebarOpen, setIsSidebarOpen, isRightSidebarOpen, setIsRightSidebarOpen } = useChatContext();
+  const isDashboard = pathname === "/dashboard";
 
   return (
     <nav className="flex-shrink-0 h-12 border-b border-gray-200 dark:border-white/10 bg-white dark:bg-[#171717] flex items-center px-4 gap-1">
@@ -57,6 +58,21 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
           Dashboard
         </Link>
       </div>
+
+      {/* Right Sidebar toggle (Dashboard only) */}
+      {isDashboard && (
+        <button
+          onClick={() => setIsRightSidebarOpen((prev) => !prev)}
+          title={isRightSidebarOpen ? "Hide widgets" : "Show widgets"}
+          className={`p-2 rounded-lg transition-colors ${
+            isRightSidebarOpen
+              ? "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-500/10"
+              : "text-gray-400 dark:text-white/40 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10"
+          }`}
+        >
+          <Grid3X3 className="h-4 w-4" />
+        </button>
+      )}
 
       {/* Theme toggle */}
       <button

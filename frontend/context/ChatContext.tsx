@@ -12,6 +12,7 @@ import {
   sendChatMessage,
   type ChatMessage as ApiChatMessage,
   type ChartSpec,
+  type Widget,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -36,6 +37,7 @@ export interface Report {
   name: string;
   createdAt: number;
   pinned?: boolean;
+  widgets?: Widget[];
 }
 
 interface ChatContextValue {
@@ -58,11 +60,17 @@ interface ChatContextValue {
   renameReport: (id: string, name: string) => void;
   deleteReport: (id: string) => Promise<void>;
   pinReport: (id: string) => void;
+  updateReport: (id: string, updates: Partial<Report>) => void;
   // Sidebar
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  // Right Sidebar (Dashboard Widgets)
+  isRightSidebarOpen: boolean;
+  setIsRightSidebarOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+  rightSidebarWidth: number;
+  setRightSidebarWidth: (w: number) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -76,6 +84,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(280);
   const [mounted, setMounted] = useState(false);
   const activeChatIdRef = useRef<string | null>(null);
   activeChatIdRef.current = activeChatId;
@@ -127,6 +137,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           name: r.name,
           createdAt: new Date(r.created_at).getTime(),
           pinned: r.pinned ?? false,
+          widgets: r.widgets ?? [],
         }));
         setReports(parsed);
         setActiveReportId(parsed[0].id);
@@ -192,6 +203,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         user_id: user.id,
         name: report.name,
         pinned: report.pinned ?? false,
+        widgets: report.widgets ?? [],
         created_at: new Date(report.createdAt).toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -338,7 +350,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const addReport = useCallback(() => {
     const id = crypto.randomUUID();
-    const report: Report = { id, name: "New Report", createdAt: Date.now() };
+    const report: Report = { id, name: "New Report", createdAt: Date.now(), widgets: [] };
     setReports((prev) => [report, ...prev]);
     setActiveReportId(id);
     syncReport(report);
@@ -382,6 +394,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [syncReport]
   );
 
+  const updateReport = useCallback(
+    (id: string, updates: Partial<Report>) => {
+      setReports((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, ...updates } : r));
+        const updated = next.find((r) => r.id === id);
+        if (updated) syncReport(updated);
+        return next;
+      });
+    },
+    [syncReport]
+  );
+
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
@@ -404,10 +428,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         renameReport,
         deleteReport,
         pinReport,
+        updateReport,
         sidebarWidth,
         setSidebarWidth,
         isSidebarOpen,
         setIsSidebarOpen,
+        isRightSidebarOpen,
+        setIsRightSidebarOpen,
+        rightSidebarWidth,
+        setRightSidebarWidth,
       }}
     >
       {children}

@@ -47,11 +47,18 @@ def _get_user_id(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.removeprefix("Bearer ").strip()
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Supabase not initialized")
     try:
         res = supabase_client.auth.get_user(token)
+        if not res.user:
+            raise HTTPException(status_code=401, detail="Token valid but no user found")
         return res.user.id
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[auth] get_user failed: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {type(e).__name__}")
 
 
 # ---------------------------------------------------------------------------

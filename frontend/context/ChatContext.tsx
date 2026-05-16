@@ -53,6 +53,7 @@ interface ChatContextValue {
   renameChat: (id: string, name: string) => void;
   deleteChat: (id: string) => Promise<void>;
   sendMessage: (text: string) => void;
+  stopGeneration: () => void;
   editMessage: (id: string, text: string) => Promise<void>;
   pinChat: (id: string) => void;
   // Reports
@@ -83,6 +84,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
@@ -267,6 +269,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const chatsRef = useRef(chats);
   chatsRef.current = chats;
 
+  const stopGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const sendMessage = useCallback(
     async (text: string) => {
       let chatId = activeChatIdRef.current;
@@ -328,10 +334,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
 
       try {
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text, history }),
+          signal: controller.signal,
         });
 
         if (!response.ok) throw new Error("Failed to send message");
@@ -400,24 +410,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch (err) {
-        setChats((prev) => {
-          const next = prev.map((c) =>
-            c.id === finalId
-              ? {
-                ...c,
-                messages: c.messages.map((m) =>
-                  m.id === assistantMsgId
-                    ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
-                    : m
-                ),
-              }
-              : c
-          );
-          const updated = next.find((c) => c.id === finalId);
-          if (updated) syncChat(updated);
-          return next;
-        });
+        if (err instanceof Error && err.name === "AbortError") {
+          // User stopped generation — keep whatever steps/content arrived so far
+          setChats((prev) => {
+            const updated = prev.find((c) => c.id === finalId);
+            if (updated) syncChat(updated);
+            return prev;
+          });
+        } else {
+          setChats((prev) => {
+            const next = prev.map((c) =>
+              c.id === finalId
+                ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
+                      : m
+                  ),
+                }
+                : c
+            );
+            const updated = next.find((c) => c.id === finalId);
+            if (updated) syncChat(updated);
+            return next;
+          });
+        }
       } finally {
+        abortControllerRef.current = null;
         setIsLoading(false);
       }
     },
@@ -573,6 +593,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         renameChat,
         deleteChat,
         sendMessage,
+        stopGeneration,
         editMessage,
         pinChat,
         reports,

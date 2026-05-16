@@ -10,4 +10,5 @@ psycopg2-binary
 fastmcp
 openai
 langgraph
-langchain-core
+langchain
+langchain-openai

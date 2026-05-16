@@ -9,7 +9,7 @@ app = FastAPI(title="NR2Dashboard API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000"],
+    allow_origins=["*"],  # during hackathon, open it up
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

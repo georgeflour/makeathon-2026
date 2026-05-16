@@ -131,7 +131,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             setChats(parsed);
             if (parsed.length > 0) setActiveChatId(parsed[0].id);
           }
-        } catch {}
+        } catch { }
       }
       if (reportRows && reportRows.length > 0) {
         const parsed = reportRows.map((r) => ({
@@ -152,13 +152,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             setReports(parsed);
             if (parsed.length > 0) setActiveReportId(parsed[0].id);
           }
-        } catch {}
+        } catch { }
       }
       setMounted(true);
     })();
-  // Depend only on user?.id — the user object reference changes on every token
-  // refresh, which would re-run this effect and restore deleted chats from DB.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Depend only on user?.id — the user object reference changes on every token
+    // refresh, which would re-run this effect and restore deleted chats from DB.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   // Reset mounted when user changes so localStorage writes don't race with the
@@ -304,10 +304,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           c.id !== finalId
             ? c
             : {
-                ...c,
-                name: isFirst ? text.slice(0, 40) : c.name,
-                messages: [...c.messages, userMsg],
-              }
+              ...c,
+              name: isFirst ? text.slice(0, 40) : c.name,
+              messages: [...c.messages, userMsg],
+            }
         )
       );
 

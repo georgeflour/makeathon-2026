@@ -2,7 +2,8 @@
 from fastapi import APIRouter
 from app.models import ChatRequest, ChatResponse, ChartSpec, ColorRules
 from app.db import supabase_client
-from app.azure_agent import call_agent
+# from app.azure_agent import call_agent
+from app.langgraph_agent import call_agent
 
 router = APIRouter()
 
@@ -20,7 +21,9 @@ def chat_endpoint(request: ChatRequest):
         except Exception as e:
             print(f"Failed to log user message: {e}")
 
+    print(f"\\n{'='*50}\\n[API] New Chat Request: {request.message}\\n{'='*50}")
     answer, chart_dict = call_agent(request.message, history)
+    print(f"[API] Agent Finished. Answer length: {len(answer) if answer else 0}, Has Chart: {chart_dict is not None}\\n{'='*50}\\n")
 
     if supabase_client:
         try:

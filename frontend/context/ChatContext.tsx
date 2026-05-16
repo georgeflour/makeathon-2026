@@ -22,6 +22,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   chart?: ChartSpec;
+  steps?: Array<{ step: string; message: string; sql?: string; code?: string }>;
 }
 
 export interface Chat {
@@ -268,7 +269,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(
     async (text: string) => {
-      // Use the ref so we always read the current activeChatId, not a stale closure value
       let chatId = activeChatIdRef.current;
       let isNewChat = false;
 
@@ -296,8 +296,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         content: text,
       };
 
-      const isFirst = currentMessages.length === 0;
       const finalId = chatId;
+      const isFirst = currentMessages.length === 0;
 
       setChats((prev) =>
         prev.map((c) =>
@@ -313,31 +313,105 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       setIsLoading(true);
 
+      const assistantMsgId = crypto.randomUUID();
+      const assistantMsg: Message = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "",
+        steps: [],
+      };
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === finalId ? { ...c, messages: [...c.messages, assistantMsg] } : c
+        )
+      );
+
       try {
-        const data = await sendChatMessage(text, history);
-        const assistantMsg: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.answer,
-          chart: data.chart,
-        };
-        setChats((prev) => {
-          const next = prev.map((c) =>
-            c.id === finalId ? { ...c, messages: [...c.messages, assistantMsg] } : c
-          );
-          const updated = next.find((c) => c.id === finalId);
-          if (updated) syncChat(updated);
-          return next;
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, history }),
         });
+
+        if (!response.ok) throw new Error("Failed to send message");
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+
+        const decoder = new TextDecoder();
+        let finished = false;
+
+        while (!finished) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+            const dataStr = line.replace("data: ", "").trim();
+            const eventType = lines[lines.indexOf(line) - 1]?.replace("event: ", "").trim();
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (eventType === "step") {
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === finalId
+                      ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === assistantMsgId
+                            ? { ...m, steps: [...(m.steps || []), data] }
+                            : m
+                        ),
+                      }
+                      : c
+                  )
+                );
+              } else if (eventType === "final") {
+                setChats((prev) => {
+                  const next = prev.map((c) =>
+                    c.id === finalId
+                      ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === assistantMsgId
+                            ? { ...m, content: data.answer, chart: data.chart }
+                            : m
+                        ),
+                      }
+                      : c
+                  );
+                  const updated = next.find((c) => c.id === finalId);
+                  if (updated) syncChat(updated);
+                  return next;
+                });
+                finished = true;
+              } else if (eventType === "error") {
+                throw new Error(data.message);
+              }
+            } catch (e) {
+              console.error("Parse error", e);
+            }
+          }
+        }
       } catch (err) {
-        const errorMsg: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: err instanceof Error ? err.message : "Something went wrong.",
-        };
         setChats((prev) => {
           const next = prev.map((c) =>
-            c.id === finalId ? { ...c, messages: [...c.messages, errorMsg] } : c
+            c.id === finalId
+              ? {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
+                    : m
+                ),
+              }
+              : c
           );
           const updated = next.find((c) => c.id === finalId);
           if (updated) syncChat(updated);

@@ -228,6 +228,9 @@ llm_with_tools = llm_main.bind_tools(_tools)
 # LangGraph state
 # ---------------------------------------------------------------------------
 class AgentState(TypedDict):
+    # stream callback
+    on_step: Optional[callable]
+
     # input
     original_message: str
     history:          list[dict]
@@ -309,6 +312,71 @@ Answer: {answer}"""),
 
 
 # ===========================================================================
+# CODE SNIPPETS — shown in the frontend when a user clicks on a step
+# ===========================================================================
+
+_STEP_CODE: dict[str, str] = {
+    "enhancing": """\
+prompt = ChatPromptTemplate.from_messages([
+    ("system", ENHANCER_SYSTEM),
+    ("human",  "{user_message}"),
+])
+chain  = prompt | llm_fast
+result = chain.invoke({"user_message": original_message})
+parsed = parse_json(result.content)
+# → enhanced_prompt, metric, chart_hint, language, breakdown_by
+
+chart_docs = retrieve_chart_docs(parsed["chart_hint"])""",
+
+    "sql_generation": """\
+messages = [
+    SystemMessage(content=SQL_SYSTEM),
+    HumanMessage(content=enhanced_prompt),
+]
+for _ in range(6):           # up to 6 LLM calls
+    response = llm_with_tools.invoke(messages)
+    if not response.tool_calls:
+        break                # text answer ready
+    tool_output = tool_node.invoke({"messages": messages})
+    messages.extend(tool_output["messages"])""",
+
+    "sql_executing": """\
+@tool
+def run_query(sql: str) -> str:
+    \"\"\"Execute a read-only SQL query and return JSON rows.\"\"\"
+    rows = execute_query(sql)
+    return json.dumps(rows[:50])""",
+
+    "charting": """\
+prompt = ChatPromptTemplate.from_messages([
+    ("system", CHART_AGENT_SYSTEM),   # injected with RAG chart docs
+    ("human",  "Question: {enhanced_prompt}\\n"
+               "Metric: {metric}\\n"
+               "Chart hint: {chart_hint}\\n"
+               "Breakdown by: {breakdown_by}"),
+])
+chain  = prompt | llm_fast
+result = chain.invoke({**state})
+parsed = parse_json(result.content)
+# → chart_type, chart_title, chart_palette, color_rules""",
+
+    "judging": """\
+chain  = JUDGE_PROMPT | llm_main
+result = chain.invoke({
+    "original_message": state["original_message"],
+    "sql":              state["sql"],
+    "row_count":        len(state["sql_rows"]),
+    "sample_rows":      state["sql_rows"][:5],
+    "answer":           state["answer"],
+})
+verdict = parse_json(result.content)
+if not verdict["pass"]:
+    return {"judge_passed": False, "judge_feedback": verdict["feedback"]}
+return {"judge_passed": True}""",
+}
+
+
+# ===========================================================================
 # NODES
 # ===========================================================================
 
@@ -317,6 +385,8 @@ Answer: {answer}"""),
 # ---------------------------------------------------------------------------
 def node_enhance_prompt(state: AgentState) -> dict:
     print("[enhance_prompt] START")
+    if state.get("on_step"):
+        state["on_step"]({"step": "enhancing", "message": "Analyzing your request...", "code": _STEP_CODE["enhancing"]})
 
     history = state.get("history", [])
     history_str = ""
@@ -385,6 +455,8 @@ def node_enhance_prompt(state: AgentState) -> dict:
 def node_sql_agent(state: AgentState) -> dict:
     print("[sql_agent] START")
 
+    if state.get("on_step"):
+        state["on_step"]({"step": "sql_generation", "message": "Querying the database...", "code": _STEP_CODE["sql_generation"]})
     feedback  = state.get("judge_feedback", "")
     language  = state.get("language", "en")
     user_text = state["enhanced_prompt"]
@@ -423,6 +495,8 @@ def node_sql_agent(state: AgentState) -> dict:
             if tc["name"] != "run_query":
                 continue
             submitted_sql  = tc["args"].get("sql", "")
+            if state.get("on_step"):
+                state["on_step"]({"step": "sql_executing", "message": "Executing SQL...", "sql": submitted_sql, "code": _STEP_CODE["sql_executing"]})
             last_sql_tried = submitted_sql
             tool_result    = tm.content if isinstance(tm, ToolMessage) else ""
 
@@ -468,6 +542,8 @@ def node_sql_agent(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 def node_chart_agent(state: AgentState) -> dict:
     print("[chart_agent] START")
+    if state.get("on_step"):
+        state["on_step"]({"step": "charting", "message": "Designing your visualization...", "code": _STEP_CODE["charting"]})
 
     feedback     = state.get("judge_feedback", "")
     feedback_str = (
@@ -541,6 +617,8 @@ def node_chart_agent(state: AgentState) -> dict:
 def node_judge(state: AgentState) -> dict:
     retry_count = state.get("retry_count", 0)
     print(f"[judge] START (retry #{retry_count})")
+    if state.get("on_step"):
+        state["on_step"]({"step": "judging", "message": "Verifying results...", "code": _STEP_CODE["judging"]})
 
     if retry_count >= 3:
         print("[judge] max retries hit — forcing pass")
@@ -765,6 +843,7 @@ def _get_graph():
 def call_agent(
     user_message: str,
     history: list[dict] | None = None,
+    on_step: Optional[callable] = None,
 ) -> tuple[str, dict | None]:
     """
     Drop-in replacement for the original call_agent.
@@ -774,6 +853,7 @@ def call_agent(
         return "Azure AI is not configured.", None
 
     initial_state: AgentState = {
+        "on_step":           on_step,
         "original_message":  user_message,
         "history":           history or [],
         "enhanced_prompt":   "",

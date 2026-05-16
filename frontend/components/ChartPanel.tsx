@@ -301,7 +301,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
               <XAxis dataKey="x" type="number" name="x" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <YAxis dataKey="y" type="number" name="y" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(v) => formatValue(Number(v))} />
-              <Scatter data={data as ScatterRow[]} fill={primary} opacity={0.75} />
+              <Scatter data={data as unknown as ScatterRow[]} fill={primary} opacity={0.75} />
             </ScatterChart>
           </ResponsiveContainer>
         )}
@@ -315,7 +315,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
               <YAxis dataKey="y" type="number" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <ZAxis dataKey="size" range={[40, 800]} />
               <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(v) => formatValue(Number(v))} />
-              <Scatter data={data as ScatterRow[]} fill={primary} opacity={0.65} />
+              <Scatter data={data as unknown as ScatterRow[]} fill={primary} opacity={0.65} />
             </ScatterChart>
           </ResponsiveContainer>
         )}

@@ -34,7 +34,7 @@ export default function DashboardPage() {
       const dataUrl = await toPng(element, {
         quality: 1,
         pixelRatio: 2,
-        backgroundColor: document.documentElement.classList.contains("dark") ? "#111" : "#fff",
+        backgroundColor: getComputedStyle(element).backgroundColor,
         filter: (node) => {
           const classList = (node as HTMLElement).classList;
           return classList ? !classList.contains("no-export") : true;

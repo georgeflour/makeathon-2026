@@ -24,6 +24,7 @@ interface AuthContextValue {
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<string | null>;
+  signInWithGoogle: () => Promise<string | null>;
   signOut: () => Promise<void>;
   completeOnboarding: (displayName: string, colorPalette: string, theme: string) => Promise<void>;
   updateSettings: (settings: UserProfile["settings"]) => Promise<void>;
@@ -126,6 +127,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return error?.message ?? null;
   }, []);
 
+  const signInWithGoogle = useCallback(async (): Promise<string | null> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+    return error?.message ?? null;
+  }, []);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
@@ -185,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         session, user, profile, isLoading,
-        signIn, signUp, signOut,
+        signIn, signUp, signInWithGoogle, signOut,
         completeOnboarding, updateSettings, saveProfile,
       }}
     >

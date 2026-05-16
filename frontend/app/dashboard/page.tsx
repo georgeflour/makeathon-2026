@@ -187,15 +187,16 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {widgets.map((widget) => (
                 <div key={widget.id} className="group relative">
-                  <div className="absolute top-4 right-14 z-10 opacity-0 group-hover:opacity-100 transition-opacity no-export">
+                  <div className="absolute -top-2 -right-2 z-10 opacity-0 group-hover:opacity-100 transition-all duration-200 no-export">
                     <button
                       onClick={() => removeWidget(widget.id)}
-                      className="p-1.5 rounded-lg bg-red-500 text-white shadow-lg shadow-red-500/20 hover:bg-red-600"
+                      className="p-2 rounded-full bg-white dark:bg-[#212121] text-gray-400 hover:text-red-500 border border-gray-200 dark:border-white/10 shadow-xl hover:shadow-red-500/10 transition-all hover:scale-110 active:scale-95"
+                      title="Remove from report"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  <ChartPanel chart={widget.chart} />
+                  <ChartPanel chart={widget.chart} hideSaveButton />
                 </div>
               ))}
               

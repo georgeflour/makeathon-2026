@@ -42,9 +42,10 @@ function formatValue(value: number): string {
 
 interface Props {
   chart: ChartSpec;
+  hideSaveButton?: boolean;
 }
 
-export function ChartPanel({ chart }: Props) {
+export function ChartPanel({ chart, hideSaveButton = false }: Props) {
   const { type, title, data, color_rules, sql, explanation } = chart;
   const { profile, updateSettings } = useAuth();
   const palette = getPalette(profile?.settings?.color_palette);
@@ -82,15 +83,17 @@ export function ChartPanel({ chart }: Props) {
             <p className="text-xs text-muted-foreground mt-0.5">{explanation}</p>
           )}
         </div>
-        <button
-          onClick={handleSaveWidget}
-          disabled={isSaving || alreadySaved}
-          title={alreadySaved ? "Already saved to dashboard" : "Save to dashboard"}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {alreadySaved ? <Check className="h-3 w-3 text-emerald-500" /> : <Plus className="h-3 w-3" />}
-          {alreadySaved ? "Saved" : "Save"}
-        </button>
+        {!hideSaveButton && (
+          <button
+            onClick={handleSaveWidget}
+            disabled={isSaving || alreadySaved}
+            title={alreadySaved ? "Already saved to dashboard" : "Save to dashboard"}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {alreadySaved ? <Check className="h-3 w-3 text-emerald-500" /> : <Plus className="h-3 w-3" />}
+            {alreadySaved ? "Saved" : "Save"}
+          </button>
+        )}
       </div>
 
       <div className="px-2 pb-4">

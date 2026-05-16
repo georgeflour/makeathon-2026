@@ -130,7 +130,7 @@ export function DashboardRightSidebar() {
                     <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
                       {widget.name}
                     </p>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       {activeReport?.widgets?.some(w => w.chart.sql === widget.chart.sql) ? (
                         <div className="p-1 text-emerald-500" title="Already in report">
                           <Check className="h-3 w-3" />
@@ -139,17 +139,17 @@ export function DashboardRightSidebar() {
                         <button
                           onClick={() => addWidgetToReport(widget)}
                           title="Add to report"
-                          className="p-1 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+                          className="p-1.5 rounded-lg bg-blue-500 text-white md:bg-blue-500/10 md:text-blue-500 md:hover:bg-blue-500/20"
                         >
-                          <Plus className="h-3 w-3" />
+                          <Plus className="h-3.5 w-3.5" />
                         </button>
                       )}
                       <button
                         onClick={(e) => deleteWidget(widget.id, e)}
                         title="Delete widget"
-                        className="p-1 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                        className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>

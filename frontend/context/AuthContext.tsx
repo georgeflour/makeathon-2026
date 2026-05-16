@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadProfile = useCallback(async (userId: string, email: string) => {
+  const loadProfile = useCallback(async (userId: string, email: string, metadata?: any) => {
     const { data: existing } = await supabase
       .from("app_users")
       .select("*")
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single();
 
     if (existing) {
-      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      const avatar_url = metadata?.avatar_url || metadata?.picture || null;
       setProfile({ ...(existing as UserProfile), avatar_url });
       return;
     }
@@ -68,12 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single();
 
     if (created) {
-      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      const avatar_url = metadata?.avatar_url || metadata?.picture || null;
       setProfile({ ...(created as UserProfile), avatar_url });
     } else {
       // Insert failed (e.g. RLS or race) — surface locally so onboarding still works
       console.error("Failed to create user profile:", error?.message);
-      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      const avatar_url = metadata?.avatar_url || metadata?.picture || null;
       setProfile({ ...newProfile, avatar_url } as UserProfile);
     }
   }, []);
@@ -94,7 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (session?.user) {
-        loadProfile(session.user.id, session.user.email ?? "").finally(() => {
+        loadProfile(
+          session.user.id,
+          session.user.email ?? "",
+          session.user.user_metadata
+        ).finally(() => {
           setIsLoading(false);
         });
       } else {
@@ -109,9 +113,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          loadProfile(session.user.id, session.user.email ?? "").finally(() =>
-            setIsLoading(false)
-          );
+          loadProfile(
+            session.user.id,
+            session.user.email ?? "",
+            session.user.user_metadata
+          ).finally(() => setIsLoading(false));
         } else {
           setIsLoading(false);
         }

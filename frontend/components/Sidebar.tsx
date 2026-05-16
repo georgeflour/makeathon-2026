@@ -364,6 +364,7 @@ function UserSection({
         {profile?.avatar_url ? (
           <img
             src={profile.avatar_url}
+            referrerPolicy="no-referrer"
             className="h-7 w-7 rounded-full flex-shrink-0 object-cover border border-gray-200 dark:border-white/10 shadow-sm"
             alt={displayName}
           />

@@ -13,6 +13,8 @@ langgraph
 langchain
 langchain-openai
 tiktoken
-apscheduler>=3.10
-fpdf2>=2.7
-matplotlib>=3.8
+apscheduler
+fpdf2
+matplotlib
+apscheduler
+FPDF

@@ -18,6 +18,7 @@ class ChartSpec(BaseModel):
     sql: str
     explanation: Optional[str] = None
     color_rules: Optional[ColorRules] = None
+    suggestions: Optional[list[str]] = []
 
 class ChatRequest(BaseModel):
     message: str

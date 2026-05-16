@@ -18,6 +18,7 @@ export interface ChartSpec {
   sql: string;
   explanation?: string;
   color_rules?: ColorRules;
+  suggestions?: string[];
 }
 
 export interface Widget {

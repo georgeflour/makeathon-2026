@@ -88,6 +88,7 @@ async def chat_stream_endpoint(request: Request):
                     sql=chart_dict["sql"],
                     explanation=chart_dict.get("explanation"),
                     color_rules=color_rules,
+                    suggestions=chart_dict.get("suggestions", []),
                 )
             
             final_response = ChatResponse(answer=answer, chart=chart)
@@ -127,6 +128,7 @@ def chat_endpoint(request: ChatRequest):
                 sql=chart_dict["sql"],
                 explanation=chart_dict.get("explanation"),
                 color_rules=color_rules,
+                suggestions=chart_dict.get("suggestions", []),
             )
         return ChatResponse(answer=answer, chart=chart)
     except Exception as e:

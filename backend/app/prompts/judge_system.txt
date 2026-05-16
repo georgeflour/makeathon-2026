@@ -41,21 +41,23 @@ Examples of GOOD feedback:
   "SQL returns 3 columns but bar requires exactly 2 → fix: remove the third column from SELECT"
   "No rows returned — WHERE clause too restrictive → fix: remove or relax the date filter"
   "csat averaged without NULL filter → fix: SQL must include WHERE csat_score IS NOT NULL"
+  "Scatter SQL uses LIMIT 50 with raw rows → fix: GROUP BY duration bucket (ROUND(call_duration_secs/30.0)*30) AS x_value, AVG(csat_score) AS y_value, remove ORDER BY, use LIMIT 200"
+  "Scatter columns not aliased x_value/y_value → fix: alias first column AS x_value, second AS y_value"
 
 BAD feedback (too vague — never write these):
   "Fix the chart."
   "The SQL is wrong."
   "Change the encoding."
 
+== SUGGESTIONS ==
+Provide 3-4 short, actionable follow-up requests the user could ask to modify or dig deeper into this chart.
+Examples: "Show for the last 7 days", "Break this down by segment", "Change this to a pie chart", "Show only failed calls".
+
 Return ONLY a JSON object — no prose, no markdown fences:
 {
   "passed":   true,
   "score":    5,
   "failures": [],
-  "feedback": ""
+  "feedback": "",
+  "suggestions": ["<follow-up 1>", "<follow-up 2>", "<follow-up 3>"]
 }
-"Scatter SQL uses LIMIT 50 with raw rows → fix: GROUP BY duration bucket 
- (ROUND(call_duration_secs/30.0)*30) AS x_value, AVG(csat_score) AS y_value, 
- remove ORDER BY, use LIMIT 200"
-"Scatter columns not aliased x_value/y_value → fix: alias first column AS x_value, 
- second AS y_value"

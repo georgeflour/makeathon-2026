@@ -25,7 +25,7 @@ import {
 import type { ChartSpec } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { getPalette } from "@/lib/palettes";
-import { Plus, Check, Copy } from "lucide-react";
+import { Plus, Check, Copy, Sparkles, ArrowRight } from "lucide-react";
 import { useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -46,7 +46,7 @@ function getBarColor(
 function formatValue(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-  if (value > 0 && value < 1) return `${(value * 100).toFixed(1)}%`;
+  if (value > 0 && value <= 1) return `${(value * 100).toFixed(value === 1 ? 0 : 1)}%`;
   return value.toFixed(value % 1 === 0 ? 0 : 2);
 }
 
@@ -76,8 +76,15 @@ function computeYDomain(values: number[]): [number, number] {
 
   const dataMin = Math.min(...finite);
   const dataMax = Math.max(...finite);
-  const range = dataMax - dataMin;
+  
+  // Rate detection: if everything is bounded between 0 and 1, and max > 0.
+  const isLikelyRate = dataMin >= 0 && dataMax <= 1 && dataMax > 0;
+  
+  if (isLikelyRate) {
+    return [0, 1];
+  }
 
+  const range = dataMax - dataMin;
   if (range === 0) {
     const pad = Math.abs(dataMax) * 0.1 || 1;
     return [Math.max(0, dataMax - pad), dataMax + pad];
@@ -111,13 +118,14 @@ interface SpanRow     { label: string; min: number; max: number }
 interface Props {
   chart: ChartSpec;
   hideSaveButton?: boolean;
+  onModify?: (prompt: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ChartPanel({ chart, hideSaveButton = false }: Props) {
+export function ChartPanel({ chart, hideSaveButton = false, onModify }: Props) {
   const { type, title, data, color_rules, sql, explanation } = chart;
   const { profile, updateSettings } = useAuth();
   const palette = getPalette(profile?.settings?.color_palette);
@@ -126,6 +134,8 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedLocal, setIsSavedLocal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showModify, setShowModify] = useState(false);
+  const [modifyText, setModifyText] = useState("");
 
   const savedWidgets = profile?.settings?.saved_widgets || [];
   const alreadySaved = savedWidgets.some((w) => w.chart.sql === sql) || isSavedLocal;
@@ -148,7 +158,23 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleModifySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modifyText.trim() || !onModify) return;
+    onModify(modifyText);
+    setModifyText("");
+    setShowModify(false);
+  };
+
   const ct = type?.toLowerCase().trim() ?? "bar";
+
+  const scatterData: ScatterRow[] = Array.isArray(data)
+    ? (data as any[]).map((d) => ({
+        x: Number(d.x ?? d.label ?? 0),
+        y: Number(d.y ?? d.value ?? 0),
+        size: typeof d.size === "number" ? d.size : undefined,
+      }))
+    : [];
 
   return (
     <div className="w-full rounded-xl border bg-card shadow-sm overflow-hidden mt-2">
@@ -160,17 +186,29 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
             <p className="text-xs text-muted-foreground mt-0.5">{explanation}</p>
           )}
         </div>
-        {!hideSaveButton && (
-          <button
-            onClick={handleSaveWidget}
-            disabled={isSaving || alreadySaved}
-            title={alreadySaved ? "Already saved to dashboard" : "Save to dashboard"}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {alreadySaved ? <Check className="h-3 w-3 text-emerald-500" /> : <Plus className="h-3 w-3" />}
-            {alreadySaved ? "Saved" : "Save"}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onModify && (
+            <button
+              onClick={() => setShowModify(!showModify)}
+              title="Modify chart"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${showModify ? "bg-muted text-foreground border-border" : "border-transparent bg-background text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+            >
+              <Sparkles className="h-3 w-3" />
+              Modify
+            </button>
+          )}
+          {!hideSaveButton && (
+            <button
+              onClick={handleSaveWidget}
+              disabled={isSaving || alreadySaved}
+              title={alreadySaved ? "Already saved to dashboard" : "Save to dashboard"}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {alreadySaved ? <Check className="h-3 w-3 text-emerald-500" /> : <Plus className="h-3 w-3" />}
+              {alreadySaved ? "Saved" : "Save"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Chart body */}
@@ -301,7 +339,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
               <XAxis dataKey="x" type="number" name="x" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <YAxis dataKey="y" type="number" name="y" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(v) => formatValue(Number(v))} />
-              <Scatter data={data as unknown as ScatterRow[]} fill={primary} opacity={0.75} />
+              <Scatter data={scatterData} fill={primary} opacity={0.75} />
             </ScatterChart>
           </ResponsiveContainer>
         )}
@@ -315,7 +353,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
               <YAxis dataKey="y" type="number" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
               <ZAxis dataKey="size" range={[40, 800]} />
               <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(v) => formatValue(Number(v))} />
-              <Scatter data={data as unknown as ScatterRow[]} fill={primary} opacity={0.65} />
+              <Scatter data={scatterData} fill={primary} opacity={0.65} />
             </ScatterChart>
           </ResponsiveContainer>
         )}
@@ -407,6 +445,44 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
         </div>
       )}
 
+      {/* Modify Panel */}
+      {showModify && onModify && (
+        <div className="px-4 pb-4 pt-3 bg-muted/30 border-t flex flex-col gap-3">
+          {chart.suggestions && chart.suggestions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {chart.suggestions.map((suggestion, idx) => (
+                <button 
+                  key={idx} 
+                  onClick={() => { onModify?.(suggestion); setShowModify(false); }} 
+                  className="text-[10px] px-2 py-1 rounded-md bg-background border hover:bg-muted text-muted-foreground transition-colors"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => { onModify?.("Show for the last 7 days"); setShowModify(false); }} className="text-[10px] px-2 py-1 rounded-md bg-background border hover:bg-muted text-muted-foreground transition-colors">Last 7 days</button>
+              <button onClick={() => { onModify?.("Show for the last 30 days"); setShowModify(false); }} className="text-[10px] px-2 py-1 rounded-md bg-background border hover:bg-muted text-muted-foreground transition-colors">Last 30 days</button>
+              <button onClick={() => { onModify?.("Break this down by customer segment"); setShowModify(false); }} className="text-[10px] px-2 py-1 rounded-md bg-background border hover:bg-muted text-muted-foreground transition-colors">By segment</button>
+              <button onClick={() => { onModify?.("Change this to a pie chart"); setShowModify(false); }} className="text-[10px] px-2 py-1 rounded-md bg-background border hover:bg-muted text-muted-foreground transition-colors">Pie chart</button>
+            </div>
+          )}
+          <form onSubmit={handleModifySubmit} className="flex gap-2">
+            <input 
+              type="text" 
+              placeholder="Make active changes to this chart..." 
+              value={modifyText}
+              onChange={(e) => setModifyText(e.target.value)}
+              className="flex-1 text-xs bg-background border border-border text-foreground rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/60"
+            />
+            <button type="submit" disabled={!modifyText.trim()} className="flex items-center justify-center bg-primary text-primary-foreground px-3 py-1.5 rounded-md disabled:opacity-50 transition-opacity">
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </form>
+        </div>
+      )}
+
       {/* SQL expander */}
       <details className="px-4 pb-3 group/sql">
         <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none flex items-center justify-between">
@@ -484,7 +560,7 @@ function StackedBarChart({
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Legend />
         {groups.map((g, i) => (
-          <Bar key={g} dataKey={g} stackId="a" fill={colors[i % colors.length]} radius={i === groups.length - 1 ? [3, 3, 0, 0] : undefined} />
+          <Bar key={String(g)} dataKey={String(g)} stackId="a" fill={colors[i % colors.length]} radius={i === groups.length - 1 ? [3, 3, 0, 0] : undefined} />
         ))}
       </BarChart>
     </ResponsiveContainer>
@@ -519,7 +595,7 @@ function GroupedBarChart({
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Legend />
         {groups.map((g, i) => (
-          <Bar key={g} dataKey={g} fill={colors[i % colors.length]} radius={[3, 3, 0, 0]} />
+          <Bar key={String(g)} dataKey={String(g)} fill={colors[i % colors.length]} radius={[3, 3, 0, 0]} />
         ))}
       </BarChart>
     </ResponsiveContainer>
@@ -550,7 +626,7 @@ function StackedAreaChartView({
       <AreaChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
         <defs>
           {groups.map((g, i) => (
-            <linearGradient key={g} id={`areaG_${i}`} x1="0" y1="0" x2="0" y2="1">
+            <linearGradient key={String(g)} id={`areaG_${i}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={colors[i % colors.length]} stopOpacity={0.4} />
               <stop offset="95%" stopColor={colors[i % colors.length]} stopOpacity={0.05} />
             </linearGradient>
@@ -563,13 +639,13 @@ function StackedAreaChartView({
         <Legend />
         {groups.map((g, i) => (
           <Area
-            key={g}
+            key={String(g)}
             type="monotone"
-            dataKey={g}
+            dataKey={String(g)}
             stackId="a"
             stroke={colors[i % colors.length]}
             fill={`url(#areaG_${i})`}
-            strokeWidth={1.5}
+            fillOpacity={1}
           />
         ))}
       </AreaChart>

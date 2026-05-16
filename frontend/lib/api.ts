@@ -1,10 +1,5 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
 export interface ColorRules {
   threshold: number;
   above: string;
@@ -18,12 +13,25 @@ export interface ChartSpec {
   sql: string;
   explanation?: string;
   color_rules?: ColorRules;
+  suggestions?: string[];
 }
 
 export interface Widget {
   id: string;
   name: string;
   chart: ChartSpec;
+}
+
+/**
+ * A history entry sent to the backend.
+ * For assistant messages that produced a chart, include the chart so the
+ * backend can inject it as structured context into the agent's prompt,
+ * enabling follow-up questions like "why is that intent low?".
+ */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  chart?: ChartSpec; // only present on assistant turns that rendered a chart
 }
 
 export interface ChatResponse {
@@ -56,8 +64,8 @@ export async function sendChatMessage(
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
 
+    buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
 

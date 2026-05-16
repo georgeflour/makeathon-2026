@@ -265,6 +265,7 @@ class AgentState(TypedDict):
 
     # final output
     chart_dict: Optional[dict]
+    suggestions: Optional[list[str]]
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +393,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
     if history:
         recent = history[-4:]
         history_str = "\n\nRecent conversation context:\n" + "\n".join(
-            f"{m['role'].upper()}: {m['content'][:200]}" for m in recent
+            f"{m['role'].upper()}: {m['content']}" for m in recent
         )
 
     chain  = _ENHANCER_PROMPT | llm_fast
@@ -697,16 +698,19 @@ def node_judge(state: AgentState) -> dict:
         passed   = bool(parsed.get("passed", True))
         feedback = parsed.get("feedback", "")
         score    = parsed.get("score", 5)
+        suggestions = parsed.get("suggestions", [])
         print(f"[judge] score={score}, passed={passed}, feedback={feedback!r}")
     except Exception as e:
         print(f"[judge] parse failed ({e}) — defaulting to pass")
         passed   = True
         feedback = ""
+        suggestions = []
 
     return {
         "judge_passed":   passed,
         "judge_feedback": feedback,
         "retry_count":    retry_count + (0 if passed else 1),
+        "suggestions":    suggestions,
     }
 
 
@@ -837,6 +841,7 @@ def node_assemble(state: AgentState) -> dict:
             "explanation": state.get("chart_explanation", ""),
             "color_rules": color_rules,
             "palette":     state.get("chart_palette",     "tableau10"),
+            "suggestions": state.get("suggestions",       []),
         },
     }
 

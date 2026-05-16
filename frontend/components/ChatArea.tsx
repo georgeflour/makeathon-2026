@@ -258,7 +258,12 @@ export function ChatArea() {
 
                     {msg.chart && (
                       <div className="mt-1">
-                        <ChartPanel chart={msg.chart} />
+                        <ChartPanel 
+                          chart={msg.chart} 
+                          onModify={(prompt) => {
+                            sendMessage(`Regarding the chart "${msg.chart?.title}": ${prompt}`);
+                          }}
+                        />
                       </div>
                     )}
                   </div>

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Moon, Sparkles, Sun } from "lucide-react";
+import { Moon, Sparkles, Sun, Menu } from "lucide-react";
+import { useChatContext } from "@/context/ChatContext";
 
 interface NavbarProps {
   isDark: boolean;
@@ -11,9 +12,18 @@ interface NavbarProps {
 
 export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
   const pathname = usePathname();
+  const { isSidebarOpen, setIsSidebarOpen } = useChatContext();
 
   return (
     <nav className="flex-shrink-0 h-12 border-b border-gray-200 dark:border-white/10 bg-white dark:bg-[#171717] flex items-center px-4 gap-1">
+      <button
+        onClick={() => setIsSidebarOpen((prev) => !prev)}
+        title={isSidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        className="p-1.5 mr-2 rounded-lg text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
       {/* Brand */}
       <div className="flex items-center gap-2 mr-3">
         <div className="h-6 w-6 rounded-md bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center flex-shrink-0">

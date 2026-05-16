@@ -61,6 +61,8 @@ interface ChatContextValue {
   // Sidebar
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
+  isSidebarOpen: boolean;
+  setIsSidebarOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -73,6 +75,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [reports, setReports] = useState<Report[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
   const activeChatIdRef = useRef<string | null>(null);
   activeChatIdRef.current = activeChatId;
@@ -149,6 +152,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMounted(false);
   }, [user?.id]);
+
+  useEffect(() => {
+    // Hide sidebar on initial load if on mobile
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (mounted && user) localStorage.setItem(`httf-chats-${user.id}`, JSON.stringify(chats));
@@ -396,6 +406,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         pinReport,
         sidebarWidth,
         setSidebarWidth,
+        isSidebarOpen,
+        setIsSidebarOpen,
       }}
     >
       {children}

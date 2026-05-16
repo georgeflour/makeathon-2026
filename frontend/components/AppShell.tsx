@@ -71,7 +71,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     <ChatProvider>
       <div className="flex flex-col h-full">
         <Navbar isDark={isDark} onToggleTheme={toggleTheme} />
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden relative">
           <Sidebar />
           <div className="flex-1 overflow-hidden">{children}</div>
         </div>

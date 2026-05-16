@@ -23,7 +23,7 @@ export function OnboardingFlow() {
   const { completeOnboarding } = useAuth();
   const [step, setStep] = useState(1);
   const [displayName, setDisplayName] = useState("");
-  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [colorPalette, setColorPalette] = useState("ocean");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -193,7 +193,7 @@ function NextBtn({ onClick, label = "Continue" }: { onClick: () => void; label?:
   return (
     <button
       onClick={onClick}
-      className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+      className="flex-1 w-full px-6 py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold hover:opacity-90 shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2"
     >
       {label} <ArrowRight className="h-4 w-4" />
     </button>
@@ -266,7 +266,7 @@ function StepTheme({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <ThemeCard mode="light" selected={value === "light"} onClick={() => onChange("light")} />
         <ThemeCard mode="dark" selected={value === "dark"} onClick={() => onChange("dark")} />
       </div>
@@ -381,7 +381,7 @@ function StepPalette({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         {Object.values(PALETTES).map((palette) => (
           <button
             key={palette.name}
@@ -457,7 +457,7 @@ function StepReady({
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {READY_CARDS.map(({ icon: Icon, title, body }) => (
           <div
             key={title}
@@ -477,7 +477,7 @@ function StepReady({
         <button
           onClick={onFinish}
           disabled={isSubmitting}
-          className="flex-1 py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center justify-center gap-2"
+          className="flex-1 w-full px-6 py-3.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 text-white font-semibold hover:opacity-90 shadow-lg shadow-blue-500/20 disabled:shadow-none disabled:opacity-50 transition-all flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
             <>

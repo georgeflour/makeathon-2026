@@ -11,7 +11,7 @@ export function Sidebar() {
   const {
     chats, activeChatId, newChat, selectChat, renameChat, deleteChat, pinChat,
     reports, activeReportId, addReport, selectReport, renameReport, deleteReport, pinReport,
-    sidebarWidth, setSidebarWidth,
+    sidebarWidth, setSidebarWidth, isSidebarOpen, setIsSidebarOpen,
   } = useChatContext();
   const { profile, signOut } = useAuth();
 
@@ -24,11 +24,23 @@ export function Sidebar() {
   const goToChat = (id: string) => {
     selectChat(id);
     if (pathname === "/settings") router.push("/");
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
   const goToNewChat = () => {
     newChat();
     if (pathname === "/settings") router.push("/");
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleAddReport = () => {
+    addReport();
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleSelectReport = (id: string) => {
+    selectReport(id);
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
   };
   const widthRef = useRef(sidebarWidth);
   widthRef.current = sidebarWidth;
@@ -180,15 +192,34 @@ export function Sidebar() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative flex-shrink-0 h-full flex" style={{ width: sidebarWidth }}>
-      <div className="flex-1 flex flex-col h-full bg-gray-100 dark:bg-[#171717] border-r border-gray-200 dark:border-white/5 overflow-hidden select-none">
+    <>
+      {/* Mobile Backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="md:hidden absolute inset-0 z-20 bg-black/50 transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <div
+        className={`absolute md:relative flex-shrink-0 h-full z-30 flex transition-all duration-300 ease-in-out overflow-hidden ${
+          isSidebarOpen 
+            ? "translate-x-0 w-[var(--sidebar-width)]" 
+            : "-translate-x-full w-[var(--sidebar-width)] md:translate-x-0 md:w-0"
+        }`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+      >
+        <div 
+          className="flex-1 flex flex-col h-full bg-gray-100 dark:bg-[#171717] border-r border-gray-200 dark:border-white/5 overflow-hidden select-none w-[var(--sidebar-width)]"
+        >
 
         {isDashboard ? (
           /* ── Dashboard mode ─────────────────────────────── */
           <>
             <div className="px-2 pt-3 pb-1">
               <button
-                onClick={addReport}
+                onClick={handleAddReport}
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
               >
                 <FilePlus className="h-4 w-4 flex-shrink-0" />
@@ -204,7 +235,7 @@ export function Sidebar() {
                     <ItemList
                       items={pinnedReports}
                       activeId={activeReportId}
-                      onSelect={selectReport}
+                      onSelect={handleSelectReport}
                       onRename={renameReport}
                       onDelete={deleteReport}
                       onPin={pinReport}
@@ -220,7 +251,7 @@ export function Sidebar() {
                     <ItemList
                       items={recentReports}
                       activeId={activeReportId}
-                      onSelect={selectReport}
+                      onSelect={handleSelectReport}
                       onRename={renameReport}
                       onDelete={deleteReport}
                       onPin={pinReport}
@@ -280,27 +311,30 @@ export function Sidebar() {
         )}
 
         {/* ── Bottom: settings + user profile ──────────────── */}
-        <UserSection profile={profile} signOut={signOut} />
+        <UserSection profile={profile} signOut={signOut} setIsSidebarOpen={setIsSidebarOpen} />
 
       </div>
 
-      {/* Resize handle */}
+      {/* Resize handle (desktop only) */}
       <div
         onMouseDown={startResize}
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
+        className="hidden md:block absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
       >
         <div className="h-full w-full group-hover:bg-gray-400/30 dark:group-hover:bg-white/15 transition-colors" />
       </div>
     </div>
+    </>
   );
 }
 
 function UserSection({
   profile,
   signOut,
+  setIsSidebarOpen,
 }: {
   profile: ReturnType<typeof useAuth>["profile"];
   signOut: () => void;
+  setIsSidebarOpen: (open: boolean) => void;
 }) {
   const pathname = usePathname();
   const initials = profile?.display_name
@@ -313,6 +347,9 @@ function UserSection({
       {/* Settings link */}
       <Link
         href="/settings"
+        onClick={() => {
+          if (window.innerWidth < 768) setIsSidebarOpen(false);
+        }}
         className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
           pathname === "/settings"
             ? "bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white"
@@ -341,7 +378,7 @@ function UserSection({
         <button
           onClick={signOut}
           title="Sign out"
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-300/60 dark:hover:bg-white/10 text-gray-400 dark:text-white/40 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+          className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-gray-300/60 dark:hover:bg-white/10 text-gray-400 dark:text-white/40 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
         >
           <LogOut className="h-3.5 w-3.5" />
         </button>

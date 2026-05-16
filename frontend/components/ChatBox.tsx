@@ -91,11 +91,10 @@ export function ChatBox() {
               <div key={idx} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] ${msg.role === "user" ? "w-fit" : "w-full"}`}>
                   <div
-                    className={`rounded-2xl px-4 py-2 ${
-                      msg.role === "user"
+                    className={`rounded-2xl px-4 py-2 ${msg.role === "user"
                         ? "bg-primary text-primary-foreground rounded-tr-sm ml-auto w-fit"
                         : "bg-muted text-foreground rounded-tl-sm border"
-                    }`}
+                      }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   </div>

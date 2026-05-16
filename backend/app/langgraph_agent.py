@@ -396,7 +396,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
             f"{m['role'].upper()}: {m['content']}" for m in recent
         )
 
-    chain  = _ENHANCER_PROMPT | llm_fast
+    chain  = _ENHANCER_PROMPT | llm_main
     result = chain.invoke({"user_message": state["original_message"] + history_str})
 
     # Defaults
@@ -449,6 +449,40 @@ def node_enhance_prompt(state: AgentState) -> dict:
             "retry_count":       0,
             "chart_dict":        None,
         }
+
+    elif intent == "needs_clarification":
+        print("[enhance_prompt] needs_clarification — returning question to frontend")
+        clarification_question    = parsed.get("clarification_question", "Could you clarify your request?")
+        clarification_suggestions = parsed.get("clarification_suggestions", [])
+        clarification_payload = json.dumps({
+            "type":        "clarification",
+            "question":    clarification_question,
+            "suggestions": clarification_suggestions,
+        }, ensure_ascii=False)
+        return {
+            "enhanced_prompt": clarification_payload,
+            "metric":          "other",
+            "chart_hint":      "none",
+            "language":        language,
+            "breakdown_by":    "null",
+            "chart_docs":      "",
+            "vegalite_docs":   "",
+            "messages":        [],
+            "rag_context":     "",
+            "answer":          clarification_payload,
+            "sql":               "",
+            "sql_rows":          [],
+            "chart_type":        "none",
+            "chart_title":       "",
+            "chart_palette":     "tableau10",
+            "chart_explanation": "",
+            "color_rules":       None,
+            "judge_passed":      True,
+            "judge_feedback":    "",
+            "retry_count":       0,
+            "chart_dict":        None,
+        }
+ 
 
     # ------------------------------------------------------------------
     # ANALYTICAL — run RAG and continue to sql_agent + chart_agent

@@ -35,9 +35,41 @@ function getBarColor(
 }
 
 function formatValue(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  if (value > 0 && value < 1) return `${(value * 100).toFixed(1)}%`;
+  return value.toFixed(value % 1 === 0 ? 0 : 2);
+}
+
+function formatTooltipValue(value: number): string {
   if (value >= 1000) return value.toLocaleString();
   if (value > 0 && value < 1) return `${(value * 100).toFixed(1)}%`;
   return value.toFixed(value % 1 === 0 ? 0 : 2);
+}
+
+function computeYDomain(values: number[]): [number, number] {
+  const finite = values.filter(isFinite);
+  if (finite.length === 0) return [0, 1];
+
+  const dataMin = Math.min(...finite);
+  const dataMax = Math.max(...finite);
+  const range = dataMax - dataMin;
+
+  // All identical values — add symmetric padding
+  if (range === 0) {
+    const pad = Math.abs(dataMax) * 0.1 || 1;
+    return [Math.max(0, dataMax - pad), dataMax + pad];
+  }
+
+  // Zero baseline when data includes negatives/zero OR range is wide relative to scale
+  // (wide = values genuinely spread from 0, so truncating would be misleading)
+  if (dataMin <= 0 || range / dataMax >= 0.3) {
+    return [Math.min(0, dataMin), dataMax + range * 0.1];
+  }
+
+  // Adaptive scaling: narrow range relative to magnitude — show the variance
+  const pad = Math.max(range * 0.15, dataMax * 0.005);
+  return [Math.max(0, dataMin - pad), dataMax + pad];
 }
 
 interface Props {
@@ -112,17 +144,23 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
 
         {type === "bar" && Array.isArray(data) && (
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
+            <BarChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis
                 dataKey="label"
                 tick={{ fontSize: 11 }}
                 angle={-35}
                 textAnchor="end"
-                interval={0}
+                interval="preserveStartEnd"
+                height={64}
               />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={formatValue}
+                width={56}
+                domain={computeYDomain((data as Array<{ value: number }>).map(d => d.value))}
+              />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {(data as Array<{ label: string; value: number }>).map((entry, i) => (
                   <Cell key={i} fill={getBarColor(entry.value, above, below, colors[i % colors.length], color_rules)} />
@@ -134,11 +172,16 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
 
         {type === "line" && Array.isArray(data) && (
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+            <LineChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 48 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={formatValue}
+                width={56}
+                domain={computeYDomain((data as Array<{ y: number }>).map(d => d.y))}
+              />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
               <Line type="monotone" dataKey="y" stroke={primary} dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -146,7 +189,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
 
         {type === "area" && Array.isArray(data) && (
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+            <AreaChart data={data} margin={{ top: 4, right: 16, left: 8, bottom: 48 }}>
               <defs>
                 <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={primary} stopOpacity={0.3} />
@@ -154,9 +197,14 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <XAxis dataKey="x" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                tickFormatter={formatValue}
+                width={56}
+                domain={computeYDomain((data as Array<{ y: number }>).map(d => d.y))}
+              />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
               <Area type="monotone" dataKey="y" stroke={primary} fill="url(#areaGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>

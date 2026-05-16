@@ -50,11 +50,19 @@ from app.query_engine import execute_query, normalize_data
 _data_dir    = Path(__file__).parent / "data"
 _visuals_dir = Path(__file__).parent.parent.parent / "visuals"
 
-_SCHEMA  = (_data_dir    / "schema.md").read_text(encoding="utf-8")
-_METRICS = (_data_dir    / "metrics_dictionary.md").read_text(encoding="utf-8")
-_CHARTS  = (_visuals_dir / "charts.json").read_text(encoding="utf-8")
-_PALLETS = (_visuals_dir / "pallets.json").read_text(encoding="utf-8")
-_PROMPT  = (_visuals_dir / "prompt.txt").read_text(encoding="utf-8")
+def _load_file(path: Path, default: str = "") -> str:
+    """Load file safely with fallback."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        print(f"Warning: {path} not found, using empty default")
+        return default
+
+_SCHEMA  = _load_file(_visuals_dir / "schema.md")
+_METRICS = _load_file(_data_dir    / "metrics_dictionary.md")
+_CHARTS  = _load_file(_visuals_dir / "charts.json", default="{}")
+_PALLETS = _load_file(_visuals_dir / "pallets.json", default="{}")
+_PROMPT  = _load_file(_visuals_dir / "prompt.txt")
 
 # ---------------------------------------------------------------------------
 # LangChain LLM instances — both point at your single Azure endpoint

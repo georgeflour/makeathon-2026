@@ -21,13 +21,18 @@ Flow:
                         ├─► pass → assemble → END
                         └─► fail → retry    → judge  (max 3 loops)
 
+Prompt files (edit these without touching Python):
+    prompts/enhancer_system.txt   — Agent 1: query classifier
+    prompts/sql_system.txt        — Agent 2: SQL writer  ({schema} and {metrics} injected at runtime)
+    prompts/chart_system.txt      — Agent 3: chart spec  ({palettes} and {chart_docs} injected at runtime)
+    prompts/judge_system.txt      — Agent 4: quality judge
+
 RAG strategy:
-    - schema.md + metrics_dictionary.md : always fully injected (SQL agent needs all of it)
-    - pallets.json                       : always fully injected (small, always needed)
-    - charts.json                        : RAG — only relevant chart type docs retrieved
-                                           based on chart_hint from enhance_prompt node.
-                                           Retrieved once in Node 1, stored in state as
-                                           chart_docs, consumed by Node 3.
+    - schema_explainations.md + metrics_dictionary.md : always fully injected into SQL agent
+    - pallets.json                                   : always fully injected into chart agent
+    - charts.json                                    : RAG — only relevant entries retrieved
+                                                       based on chart_hint from Node 1,
+                                                       stored in state.chart_docs, used by Node 3
 
 Requirements (add to requirements.txt):
     langgraph
@@ -53,12 +58,28 @@ from app.config import settings
 from app.query_engine import execute_query, normalize_data
 
 # ---------------------------------------------------------------------------
-# Load static knowledge files
+# Directory layout — everything lives in prompts/ next to this file
 # ---------------------------------------------------------------------------
-_data_dir    = Path(__file__).parent / "data"
-_visuals_dir = Path(__file__).parent.parent.parent / "visuals"
+#
+#   backend/app/
+#   ├── langgraph_agent.py
+#   └── prompts/
+#       ├── enhancer_system.txt      ← Agent 1 system prompt
+#       ├── sql_system.txt           ← Agent 2 system prompt  ({schema} {metrics} placeholders)
+#       ├── chart_system.txt         ← Agent 3 system prompt  ({palettes} {chart_docs} placeholders)
+#       ├── judge_system.txt         ← Agent 4 system prompt
+#       ├── schema_explainations.md   ← flat-table DB schema (injected into sql_system)
+#       ├── metrics_dictionary.md    ← metric formulas       (injected into sql_system)
+#       ├── pallets.json             ← palette catalogue      (injected into chart_system)
+#       └── charts.json             ← chart type docs        (RAG source for chart_system)
+#
+_THIS_DIR    = Path(__file__).parent
+_PROMPTS_DIR = _THIS_DIR / "prompts"
 
 
+# ---------------------------------------------------------------------------
+# File loader
+# ---------------------------------------------------------------------------
 def _load_file(path: Path, default: str = "") -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -67,47 +88,62 @@ def _load_file(path: Path, default: str = "") -> str:
         return default
 
 
-_SCHEMA      = _load_file(_visuals_dir / "schema.md")
-_METRICS     = _load_file(_data_dir    / "metrics_dictionary.md")
-_PALLETS     = _load_file(_visuals_dir / "pallets.json", default="{}")
-_CHARTS_RAW  = _load_file(_visuals_dir / "charts.json",  default="{}")
+# ---------------------------------------------------------------------------
+# Static knowledge — all loaded from prompts/, once at startup
+# ---------------------------------------------------------------------------
 
-# Parse charts once at startup for RAG lookups
+# Agent system prompts (plain text — edit without touching Python)
+_ENHANCER_SYSTEM_RAW   = _load_file(_PROMPTS_DIR / "enhancer_system.txt")
+_SQL_SYSTEM_TEMPLATE   = _load_file(_PROMPTS_DIR / "sql_system.txt")     # placeholders: {schema} {metrics}
+_CHART_SYSTEM_TEMPLATE = _load_file(_PROMPTS_DIR / "chart_system.txt")   # placeholders: {palettes} {chart_docs}
+_JUDGE_SYSTEM_RAW      = _load_file(_PROMPTS_DIR / "judge_system.txt")
+
+# Data / knowledge files (also in prompts/)
+_SCHEMA     = _load_file(_PROMPTS_DIR / "schema_explainations.md")
+_METRICS    = _load_file(_PROMPTS_DIR / "metrics_dictionary.md")
+_PALLETS    = _load_file(_PROMPTS_DIR / "pallets.json",  default="{}")
+_CHARTS_RAW = _load_file(_PROMPTS_DIR / "charts.json",   default="{}")
+
+# Parse charts.json once for RAG lookups
 try:
     _CHARTS_INDEX: dict = json.loads(_CHARTS_RAW)
 except Exception:
     _CHARTS_INDEX = {}
 
+# Build SQL system prompt once (schema + metrics are static, language added per call)
+_SQL_SYSTEM_BASE = _SQL_SYSTEM_TEMPLATE.format(schema=_SCHEMA, metrics=_METRICS)
+
+# Escape { } in enhancer + judge prompts so LangChain doesn't treat them as variables.
+# Their only real template variable is in the human turn, not the system turn.
+_ENHANCER_SYSTEM = _ENHANCER_SYSTEM_RAW.replace("{", "{{").replace("}", "}}")
+_JUDGE_SYSTEM    = _JUDGE_SYSTEM_RAW.replace("{", "{{").replace("}", "}}")
+
+
 # ---------------------------------------------------------------------------
 # RAG — retrieve relevant chart docs by chart_hint
 # ---------------------------------------------------------------------------
-
-# Map chart_hint values → chart names in charts.json
 _CHART_HINT_MAP: dict[str, list[str]] = {
-    "bar":      ["Bar Chart", "Grouped Bar Chart", "Stacked Bar Chart", "Column Chart"],
-    "line":     ["Line Chart", "Multi-set Line Chart", "Slope Chart"],
-    "area":     ["Area Chart", "Stacked Area Chart"],
-    "pie":      ["Pie Chart", "Donut Chart"],
-    "kpi":      [],          # no chart doc needed — single number
-    "scatter":  ["Scatterplot", "Bubble Chart"],
-    "heatmap":  ["Heatmap (Matrix)"],
+    "bar":     ["Bar Chart", "Grouped Bar Chart", "Stacked Bar Chart", "Column Chart"],
+    "line":    ["Line Chart", "Multi-set Line Chart", "Slope Chart"],
+    "area":    ["Area Chart", "Stacked Area Chart"],
+    "pie":     ["Pie Chart", "Donut Chart"],
+    "kpi":     [],   # no chart doc needed — single number
+    "scatter": ["Scatterplot", "Bubble Chart"],
+    "heatmap": ["Heatmap (Matrix)"],
 }
 
 
 def _retrieve_chart_docs(chart_hint: str) -> str:
     """
-    Return a compact JSON string containing only the chart type entries
-    relevant to the given chart_hint. Falls back to bar if hint unknown.
-    Empty string is returned for 'kpi' (no doc needed).
+    Return compact JSON of chart-type entries relevant to chart_hint.
+    Falls back to bar entries if hint is unknown. Empty string for kpi.
     """
     keys = _CHART_HINT_MAP.get(chart_hint, _CHART_HINT_MAP["bar"])
     if not keys:
         return ""
     docs = {k: _CHARTS_INDEX[k] for k in keys if k in _CHARTS_INDEX}
-    if not docs:
-        # Fallback: return bar docs
-        bar_keys = _CHART_HINT_MAP["bar"]
-        docs = {k: _CHARTS_INDEX[k] for k in bar_keys if k in _CHARTS_INDEX}
+    if not docs:  # key mismatch — fall back to bar
+        docs = {k: _CHARTS_INDEX[k] for k in _CHART_HINT_MAP["bar"] if k in _CHARTS_INDEX}
     return json.dumps(docs, ensure_ascii=False, indent=2)
 
 
@@ -132,10 +168,10 @@ def _make_llm(deployment: str, max_tokens: int) -> AzureChatOpenAI:
 llm_fast = _make_llm(_FAST_MODEL, max_tokens=500)    # agents 1 & 3
 llm_main = _make_llm(_MAIN_MODEL, max_tokens=1200)   # agents 2 & 4
 
+
 # ---------------------------------------------------------------------------
 # Tool — run_query
 # ---------------------------------------------------------------------------
-
 def _json_safe(obj):
     import datetime, decimal
     if isinstance(obj, decimal.Decimal):
@@ -163,10 +199,10 @@ _tools         = [run_query]
 _tool_node     = ToolNode(_tools)
 llm_with_tools = llm_main.bind_tools(_tools)
 
+
 # ---------------------------------------------------------------------------
 # LangGraph state
 # ---------------------------------------------------------------------------
-
 class AgentState(TypedDict):
     # stream callback
     on_step: Optional[callable]
@@ -181,7 +217,8 @@ class AgentState(TypedDict):
     chart_hint:       str
     language:         str
     breakdown_by:     str
-    chart_docs:       str   # RAG result: relevant chart type documentation
+    chart_docs:       str    # RAG result: relevant chart type documentation
+    rag_context:      str    # backward-compat summary string
 
     # agent 2 output
     # Annotated[list, operator.add] → langgraph appends messages across nodes
@@ -209,7 +246,6 @@ class AgentState(TypedDict):
 # ---------------------------------------------------------------------------
 # Helper: strip markdown fences and parse JSON
 # ---------------------------------------------------------------------------
-
 def _parse_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
@@ -220,295 +256,16 @@ def _parse_json(text: str) -> dict:
     return json.loads(text.strip())
 
 
-# ===========================================================================
-# AGENT SYSTEM PROMPTS
-# ===========================================================================
-
 # ---------------------------------------------------------------------------
-# Agent 1 — Prompt Enhancer + RAG Classifier
+# Static prompt templates (built once at import time)
 # ---------------------------------------------------------------------------
-_ENHANCER_SYSTEM = """\
-You are a query classifier for NR2Dashboard, a banking voicebot analytics dashboard \
-for a Greek bank. The dataset has ~10,000 calls over 90 days in Greek and English.
+_ENHANCER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _ENHANCER_SYSTEM),   # { } already escaped
+    ("human",  "{user_message}"),
+])
 
-Your job: turn the user's raw question into a precise analytical question and classify it \
-so the downstream SQL and chart agents can work correctly.
-
-== CHART HINT RULES ==
-Single summary number (overall rate, total, average with no grouping)  → "kpi"
-Distribution or share of 2–5 categories (breakdown, split, ποσοστό)   → "pie"
-Ranking or comparison across many categories (top N, by X, ανά)        → "bar"
-Trend over time (daily, weekly, hourly, τάση, over time)               → "line"
-Two dimensions as a grid (hour × day, region × intent, heatmap)        → "heatmap"
-Relationship between two numeric variables (correlation, vs, σχέση)    → "scatter"
-
-== METRIC CLASSIFICATION ==
-containment_rate  → AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END)
-csat              → AVG(csat_score) WHERE csat_score IS NOT NULL (~70% of calls have it)
-aht               → AVG(call_duration_secs)
-volume            → COUNT(*) on conversations
-cost              → AVG(cost_amount) or SUM(cost_amount)
-escalation_rate   → AVG(CASE WHEN outcome='escalated' THEN 1.0 ELSE 0.0 END)
-tool_success_rate → AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END) on tool_calls
-
-== OUTPUT ==
-Return ONLY valid JSON — no prose, no markdown fences:
-{{
-  "enhanced_prompt": "<precise analytical question, same language as user input>",
-  "metric": "<containment_rate|csat|aht|volume|cost|escalation_rate|tool_success_rate|other>",
-  "chart_hint": "<bar|line|pie|kpi|heatmap|scatter>",
-  "language": "<el|en>",
-  "breakdown_by": "<grouping dimension if any: region|intent|bot_version|segment|hour|date|null>"
-}}"""
-
-# ---------------------------------------------------------------------------
-# Agent 2 — SQL Agent
-# (schema and metrics are always fully injected — SQL agent needs all of it)
-# ---------------------------------------------------------------------------
-_SQL_SYSTEM = f"""\
-You are a PostgreSQL expert for NR2Dashboard, a banking voicebot analytics platform.
-Your ONLY job is to write and validate a SQL SELECT query using the run_query tool.
-
-== IMPORTANT: SUPABASE FLAT TABLES (PostgreSQL) ==
-Do NOT use DuckDB syntax, nested structs, or dot-notation column access.
-Do NOT use conversations_raw, v_conversations, or any view names.
-Use ONLY these five flat tables with the exact columns listed below.
-
--- TABLE: conversations
-   conversation_id    TEXT  (primary key)
-   agent_id           TEXT  (e.g. 'agt_bank_voicebot_v2_2_1')
-   agent_name         TEXT
-   user_id            TEXT
-   status             TEXT
-   start_time         TIMESTAMPTZ
-   start_date         DATE   ← use this for daily/weekly grouping
-   start_hour         INT    (0-23)
-   start_dow          INT    (0=Sunday … 6=Saturday)
-   call_duration_secs BIGINT
-   cost_amount        FLOAT
-   cost_currency      TEXT   (always 'EUR')
-   call_direction     TEXT
-   from_number        TEXT
-   termination_reason TEXT   ('completed'|'transferred_to_human'|'caller_hung_up'|'silence_timeout')
-   bot_version        TEXT   ('2.2.1' or '2.3.0')
-   transcript_summary TEXT
-   call_successful    TEXT   ('success'|'failure'|'unknown')
-   main_language      TEXT   ('el'|'en')
-   segment            TEXT   ('new'|'returning'|'premium'|'business'|'unknown')
-   region             TEXT   ('attica'|'thessaloniki'|'crete'|'patras'|'larissa'|'other_gr'|'international')
-   csat_score         FLOAT  (1.0–5.0, NULL if not surveyed ~70% of calls)
-   csat_collected     BOOL
-   outcome            TEXT   ('resolved'|'escalated'|'abandoned'|'timeout')
-
--- TABLE: turns
-   id                 BIGINT (PK)
-   conversation_id    TEXT   (FK → conversations)
-   start_time         TIMESTAMPTZ
-   agent_id           TEXT
-   main_language      TEXT
-   role               TEXT   ('agent'|'user')
-   time_in_call_secs  BIGINT
-   message            TEXT
-   detected_intent    TEXT   (populated on user turns that surface an intent)
-   intent_confidence  FLOAT
-   sentiment          TEXT   ('positive'|'neutral'|'negative')
-   turn_number        BIGINT
-   tool_calls_count   BIGINT
-
--- TABLE: evaluations
-   id                 BIGINT (PK)
-   conversation_id    TEXT   (FK → conversations)
-   start_time         TIMESTAMPTZ
-   agent_id           TEXT
-   bot_version        TEXT
-   main_language      TEXT
-   segment            TEXT
-   region             TEXT
-   criterion_id       TEXT   ('authentication_completed'|'intent_resolved'|'escalation_triggered'|
-                               'compliance_disclaimer_given'|'pii_handled_safely'|
-                               'fallback_count_acceptable'|'language_consistency'|'tool_call_success_rate')
-   result             TEXT   ('success'|'failure'|'unknown')
-   rationale          TEXT
-
--- TABLE: data_collection
-   id                 BIGINT (PK)
-   conversation_id    TEXT   (FK → conversations)
-   start_time         TIMESTAMPTZ
-   agent_id           TEXT
-   bot_version        TEXT
-   main_language      TEXT
-   segment            TEXT
-   region             TEXT
-   field_id           TEXT   ('customer_segment'|'region'|'declared_language'|'caller_line_type'|
-                               'account_type_referenced'|'transfer_amount_bucket'|
-                               'transfer_destination_country'|'card_type_referenced'|
-                               'loan_type_inquired'|'auth_method_used'|'self_service_completed'|
-                               'promised_callback'|'complaint_detected'|'topic_tags')
-   value              TEXT
-   rationale          TEXT
-
--- TABLE: tool_calls
-   id                 BIGINT (PK)
-   conversation_id    TEXT   (FK → conversations)
-   start_time         TIMESTAMPTZ
-   agent_id           TEXT
-   main_language      TEXT
-   time_in_call_secs  BIGINT
-   tool_name          TEXT
-   success            BOOLEAN
-   latency_ms         BIGINT
-
-== SQL RULES ==
-- Use ONLY the five tables above. No other tables or views exist.
-- bar/pie/line/area : return exactly 2 columns — label TEXT first, numeric value second. Always alias both.
-- kpi              : return 1 row with 1 numeric column.
-- heatmap          : return exactly 3 columns — row_label TEXT, col_label TEXT, value NUMERIC.
-- scatter          : return exactly 2 numeric columns — x first, y second.
-- Limit bar/pie results to 20 rows max. Use ORDER BY value DESC LIMIT 20.
-- For line charts  : ORDER BY date/time ASC.
-- Always ALIAS computed columns: COUNT(*) AS call_count, AVG(...) AS containment_rate, etc.
-- When joining turns for intent: wrap in a subquery with DISTINCT conversation_id to avoid row duplication.
-- Rates/percentages: decimals 0–1 ONLY. NEVER multiply by 100. Frontend handles formatting.
-- For daily queries: use start_date (DATE column on conversations) — do NOT cast start_time.
-- For customer segment: use segment column directly on conversations. Do NOT join data_collection.
-- For criterion pass rate: AVG(CASE WHEN result='success' THEN 1.0 ELSE 0.0 END) on evaluations, filtered by criterion_id.
-- For tool reliability: AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END) on tool_calls, grouped by tool_name.
-
-== METRICS QUICK REFERENCE ==
-- containment_rate  : AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END) on conversations
-- csat              : AVG(csat_score) WHERE csat_score IS NOT NULL on conversations
-- aht               : AVG(call_duration_secs) on conversations
-- volume            : COUNT(*) on conversations (or turns)
-- cost_per_call     : AVG(cost_amount) on conversations
-- escalation_rate   : AVG(CASE WHEN outcome='escalated' THEN 1.0 ELSE 0.0 END) on conversations
-
-== HUMAN-READABLE COLUMN ALIASES (always use these) ==
-  call_duration_secs  → avg_handle_time_secs
-  csat_score          → avg_csat_score
-  cost_amount         → avg_cost_eur
-  COUNT(*)            → call_volume
-  start_date          → date
-
-== DATABASE SCHEMA ==
-{_SCHEMA}
-
-== METRICS DEFINITIONS ==
-{_METRICS}
-
-== WORKFLOW ==
-Step 1: Call run_query with your SQL.
-Step 2: If it returns "Query error", read the error carefully, fix the SQL, call run_query again (max 5 retries).
-Step 3: Once run_query returns a non-empty JSON array, STOP calling tools.
-        Write ONE plain-text sentence answering the user's question in their language.
-        Do NOT output JSON. Do NOT call run_query again after receiving rows.
-"""
-
-# ---------------------------------------------------------------------------
-# Agent 3 — Chart Design Agent
-# (chart_docs injected at runtime from RAG — only relevant chart types)
-# Palettes always injected in full — small file
-# ---------------------------------------------------------------------------
-_PALLETS_ESC = _PALLETS.replace("{", "{{").replace("}", "}}")
-
-_CHART_AGENT_SYSTEM_BASE = (
-    "You are a data visualisation expert for NR2Dashboard, a banking voicebot analytics dashboard.\n"
-    "You receive an analytical question, relevant chart type documentation (RAG), and palette options.\n"
-    "Produce the best chart specification as a JSON object.\n\n"
-    "== SUPPORTED CHART TYPES ==\n"
-    "Use ONLY these types (the frontend supports exactly these):\n"
-    "  bar      → ranking or comparison across categories; sort descending unless time-ordered\n"
-    "  line     → trend over time; x-axis must be a date or hour\n"
-    "  area     → cumulative or stacked trend over time\n"
-    "  pie      → part-of-whole for 2–5 categories ONLY; never for >5 slices\n"
-    "  kpi      → single summary number; no axes needed\n"
-    "  scatter  → relationship between two numeric variables\n"
-    "  heatmap  → two categorical dimensions as a grid\n\n"
-    "== PALETTE SELECTION ==\n"
-    "  Categorical / nominal groups         → tableau10\n"
-    "  Sequential / rates / counts / KPIs   → blues or viridis\n"
-    "  Diverging / sentiment / delta        → redblue or spectral\n"
-    "  Bot version or binary comparisons    → dark2\n"
-    "  Always use lowercase vega-lite names.\n\n"
-    "== CONSISTENT DIMENSION COLORS ==\n"
-    "When these values appear in the data, use these colors in color_rules or annotations:\n"
-    "  el (Greek) → blue      | en (English) → orange\n"
-    "  resolved   → green     | escalated → amber | abandoned → red | timeout → grey\n"
-    "  v2.2.1     → #90CAF9   | v2.3.0 → #1565C0\n\n"
-    "== COLOR RULES (threshold-based coloring) ==\n"
-    "Add color_rules ONLY for these metrics:\n"
-    '  containment_rate  → {{"threshold": 0.85, "above": "purple", "below": "orange"}}\n'
-    '  csat_score        → {{"threshold": 3.5,  "above": "green",  "below": "red"}}\n'
-    '  tool_success_rate → {{"threshold": 0.90, "above": "green",  "below": "red"}}\n'
-    "  All other metrics → null\n\n"
-    "== TITLE RULES ==\n"
-    "Short, human-readable, includes the grouping dimension if present.\n"
-    "  WRONG: 'bar chart of data' | 'Chart 1'\n"
-    "  RIGHT: 'Containment Rate by Region' | 'Daily Call Volume — Last 90 Days'\n"
-    "Include (n=X) in title when the metric is an average or rate, if row count is available from context.\n\n"
-    "== AXIS LABEL MAP (never use raw column names) ==\n"
-    "  start_date / date       → 'Date'\n"
-    "  call_duration_secs      → 'Handle Time (s)'\n"
-    "  avg_handle_time_secs    → 'Avg Handle Time (s)'\n"
-    "  csat_score              → 'CSAT Score (1–5)'\n"
-    "  avg_csat_score          → 'Avg CSAT Score'\n"
-    "  cost_amount / avg_cost  → 'Cost (EUR)'\n"
-    "  containment_rate        → 'Containment Rate'\n"
-    "  escalation_rate         → 'Escalation Rate'\n"
-    "  call_volume / COUNT     → 'Call Volume'\n\n"
-    "== RATES — NEVER MULTIPLY BY 100 ==\n"
-    "All rate values are decimals 0–1. The frontend formats them as percentages.\n\n"
-    "== PALETTE GUIDE ==\n"
-    + _PALLETS_ESC
-    + "\n\n"
-    "== RELEVANT CHART TYPE DOCUMENTATION (RAG) ==\n"
-    "{chart_docs}\n\n"
-    "Return ONLY a JSON object — no prose, no markdown fences:\n"
-    '{{\n'
-    '  "chart_type":  "<bar|line|area|pie|kpi|scatter|heatmap>",\n'
-    '  "title":       "<short human-readable title>",\n'
-    '  "palette":     "<vega-lite palette name>",\n'
-    '  "explanation": "<one sentence: what does this chart show and why is this chart type correct>",\n'
-    '  "color_rules": null\n'
-    '}}\n'
-)
-
-# ---------------------------------------------------------------------------
-# Agent 4 — Judge
-# ---------------------------------------------------------------------------
 _JUDGE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """\
-You are a quality-control judge for NR2Dashboard chart responses.
-Evaluate whether the SQL result and chart spec correctly and completely answer the user's question.
-
-== SCORING CRITERIA (each is pass/fail) ==
-1. sql_correct       — SQL logically answers the exact question asked (not a similar one)
-2. shape_match       — column count and types match the chart_type contract:
-                         bar/pie/area/line → 2 cols (label TEXT, value NUMERIC)
-                         kpi              → 1 col, 1 row, NUMERIC only
-                         scatter          → 2 NUMERIC cols
-                         heatmap          → 3 cols (row TEXT, col TEXT, value NUMERIC)
-3. data_non_empty    — sql_rows is not empty (at least 1 row returned)
-4. chart_appropriate — chart type fits the data shape and question intent
-                         (pie only if ≤5 categories, kpi only if 1 row, etc.)
-5. answer_relevant   — the plain-text answer sentence addresses the user's question in their language
-
-== PASS THRESHOLD ==
-passed = true ONLY IF:  score >= 4  AND  sql_correct = true  AND  data_non_empty = true
-
-== FEEDBACK ==
-If passed = false, write ONE specific actionable instruction.
-Be precise — tell the agent exactly what to fix.
-  BAD:  "Fix the SQL."
-  GOOD: "SQL returns 3 columns but chart_type=bar requires exactly 2; remove the third column."
-  GOOD: "No rows returned — the WHERE clause filters out all data; relax the date filter."
-
-Return ONLY a JSON object — no prose, no markdown fences:
-{{
-  "passed":   true,
-  "score":    5,
-  "failures": [],
-  "feedback": ""
-}}"""),
+    ("system", _JUDGE_SYSTEM),      # { } already escaped
     ("human", """\
 User question: {original_message}
 
@@ -599,14 +356,13 @@ return {"judge_passed": True}""",
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Node 1 — Prompt Enhancer  (also runs RAG for chart docs)
+# Node 1 — Prompt Enhancer + RAG classifier
 # ---------------------------------------------------------------------------
 def node_enhance_prompt(state: AgentState) -> dict:
     print("[enhance_prompt] START")
     if state.get("on_step"):
         state["on_step"]({"step": "enhancing", "message": "Analyzing your request...", "code": _STEP_CODE["enhancing"]})
 
-    # Include recent history for follow-up question context
     history = state.get("history", [])
     history_str = ""
     if history:
@@ -615,11 +371,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
             f"{m['role'].upper()}: {m['content'][:200]}" for m in recent
         )
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", _ENHANCER_SYSTEM),
-        ("human",  "{user_message}"),
-    ])
-    chain  = prompt | llm_fast
+    chain  = _ENHANCER_PROMPT | llm_fast
     result = chain.invoke({"user_message": state["original_message"] + history_str})
 
     # Defaults
@@ -642,10 +394,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
 
     # RAG: retrieve only the relevant chart type docs
     chart_docs = _retrieve_chart_docs(chart_hint)
-    if chart_docs:
-        print(f"[enhance_prompt] RAG: retrieved {len(chart_docs)} chars for hint={chart_hint!r}")
-    else:
-        print(f"[enhance_prompt] RAG: no chart docs for hint={chart_hint!r} (kpi or unknown)")
+    print(f"[enhance_prompt] RAG: {len(chart_docs)} chars for hint={chart_hint!r}")
 
     return {
         "enhanced_prompt": enhanced,
@@ -655,11 +404,9 @@ def node_enhance_prompt(state: AgentState) -> dict:
         "breakdown_by":    breakdown_by,
         "chart_docs":      chart_docs,
         "messages":        [],
-        # Keep rag_context for backward compat with any downstream readers
         "rag_context": (
             f"metric={metric}, chart_hint={chart_hint}, language={language}, "
-            f"breakdown_by={breakdown_by}. "
-            f"Available palettes: tableau10, viridis, redblue, spectral, blues, dark2."
+            f"breakdown_by={breakdown_by}."
         ),
     }
 
@@ -669,6 +416,7 @@ def node_enhance_prompt(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 def node_sql_agent(state: AgentState) -> dict:
     print("[sql_agent] START")
+
     if state.get("on_step"):
         state["on_step"]({"step": "sql_generation", "message": "Querying the database...", "code": _STEP_CODE["sql_generation"]})
     feedback  = state.get("judge_feedback", "")
@@ -677,8 +425,8 @@ def node_sql_agent(state: AgentState) -> dict:
     if feedback:
         user_text += f"\n\nPrevious attempt failed. Judge feedback: {feedback}\nPlease fix."
 
-    # Inject language so the agent knows what language to reply in
-    sql_system = _SQL_SYSTEM + f"\n\nAnswer in: {'Greek' if language == 'el' else 'English'}."
+    # Append language instruction at call time (not baked into static template)
+    sql_system = _SQL_SYSTEM_BASE + f"\n\nAnswer in: {'Greek' if language == 'el' else 'English'}."
 
     messages: list = [
         SystemMessage(content=sql_system),
@@ -708,7 +456,6 @@ def node_sql_agent(state: AgentState) -> dict:
         for tc, tm in zip(response.tool_calls, new_msgs):
             if tc["name"] != "run_query":
                 continue
-
             submitted_sql  = tc["args"].get("sql", "")
             if state.get("on_step"):
                 state["on_step"]({"step": "sql_executing", "message": "Executing SQL...", "sql": submitted_sql, "code": _STEP_CODE["sql_executing"]})
@@ -729,7 +476,7 @@ def node_sql_agent(state: AgentState) -> dict:
 
     final_sql = last_good_sql or last_sql_tried
 
-    # Fallback fetch if model stopped without returning rows
+    # Fallback fetch if model stopped before returning rows
     if not sql_rows and final_sql:
         try:
             sql_rows = execute_query(final_sql)[:50]
@@ -752,7 +499,8 @@ def node_sql_agent(state: AgentState) -> dict:
 
 # ---------------------------------------------------------------------------
 # Node 3 — Chart Design Agent
-# (receives chart_docs from state — populated by Node 1 RAG)
+# Builds system prompt at call time by filling {palettes} and {chart_docs}
+# from the template file, then escaping remaining { } for LangChain.
 # ---------------------------------------------------------------------------
 def node_chart_agent(state: AgentState) -> dict:
     print("[chart_agent] START")
@@ -765,12 +513,22 @@ def node_chart_agent(state: AgentState) -> dict:
         if feedback else ""
     )
 
-    # Inject RAG chart docs into the system prompt
-    chart_docs = state.get("chart_docs", "") or "No specific chart documentation available; use your best judgement."
-    chart_system = _CHART_AGENT_SYSTEM_BASE.replace("{chart_docs}", chart_docs.replace("{", "{{").replace("}", "}}"))
+    chart_docs = (
+        state.get("chart_docs") or
+        "No specific chart documentation available; use your best judgement."
+    )
+
+    # Step 1: fill the two runtime placeholders with real content
+    chart_system_filled = (
+        _CHART_SYSTEM_TEMPLATE
+        .replace("{palettes}",   _PALLETS)
+        .replace("{chart_docs}", chart_docs)
+    )
+    # Step 2: escape ALL remaining { } so LangChain doesn't misread JSON in palettes/chart docs
+    chart_system_escaped = chart_system_filled.replace("{", "{{").replace("}", "}}")
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", chart_system),
+        ("system", chart_system_escaped),
         ("human",
          "Question: {enhanced_prompt}\n"
          "Metric: {metric}\n"

@@ -56,6 +56,20 @@ function formatTooltipValue(value: number): string {
   return value.toFixed(value % 1 === 0 ? 0 : 2);
 }
 
+const LABEL_ABBR = new Set(["otp", "api", "id", "url", "sms", "pin", "cvv", "atm", "iban", "sku", "erp", "crm"]);
+
+function formatLabel(label: unknown): string {
+  if (typeof label !== "string") return String(label ?? "");
+  return label
+    .split("_")
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (LABEL_ABBR.has(lower)) return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
 function computeYDomain(values: number[]): [number, number] {
   const finite = values.filter(isFinite);
   if (finite.length === 0) return [0, 1];
@@ -177,14 +191,14 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={data as LabelValue[]} margin={{ top: 4, right: 16, left: 8, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={64} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={64} tickFormatter={formatLabel} />
               <YAxis
                 tick={{ fontSize: 11 }}
                 tickFormatter={formatValue}
                 width={56}
                 domain={computeYDomain((data as LabelValue[]).map((d) => d.value))}
               />
-              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} labelFormatter={formatLabel} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {(data as LabelValue[]).map((entry, i) => (
                   <Cell key={i} fill={getBarColor(entry.value, above, below, colors[i % colors.length], color_rules)} />
@@ -199,14 +213,14 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={data as LabelValue[]} margin={{ top: 4, right: 16, left: 8, bottom: 48 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} tickFormatter={formatLabel} />
               <YAxis
                 tick={{ fontSize: 11 }}
                 tickFormatter={formatValue}
                 width={56}
                 domain={computeYDomain((data as LabelValue[]).map((d) => d.value))}
               />
-              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} labelFormatter={formatLabel} />
               <Line type="monotone" dataKey="value" stroke={primary} dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
@@ -223,14 +237,14 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" height={56} tickFormatter={formatLabel} />
               <YAxis
                 tick={{ fontSize: 11 }}
                 tickFormatter={formatValue}
                 width={56}
                 domain={computeYDomain((data as LabelValue[]).map((d) => d.value))}
               />
-              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} />
+              <Tooltip formatter={(v) => formatTooltipValue(Number(v))} labelFormatter={formatLabel} />
               <Area type="monotone" dataKey="value" stroke={primary} fill="url(#areaGrad)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
@@ -248,16 +262,17 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
                 cy="50%"
                 innerRadius={ct === "donut" || ct === "arc" ? 60 : 0}
                 outerRadius={90}
-                label={({ name, percent }) =>
-                  `${String(name).length > 12 ? String(name).slice(0, 11) + "…" : name} ${((percent ?? 0) * 100).toFixed(1)}%`
-                }
+                label={({ name, percent }) => {
+                  const pretty = formatLabel(name);
+                  return `${pretty.length > 14 ? pretty.slice(0, 13) + "…" : pretty} ${((percent ?? 0) * 100).toFixed(1)}%`;
+                }}
                 labelLine={false}
               >
                 {(data as LabelValue[]).map((_, i) => (
                   <Cell key={i} fill={colors[i % colors.length]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
               <Legend />
             </PieChart>
           </ResponsiveContainer>
@@ -345,9 +360,9 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data as LabelValue[]} barCategoryGap="2%" margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} tickFormatter={formatLabel} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
               <Bar dataKey="value" fill={primary} radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -358,9 +373,9 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data as LabelValue[]} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-              <Tooltip formatter={(v) => formatValue(Number(v))} />
+              <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
               <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                 {(data as LabelValue[]).map((_, i) => (
                   <Cell key={i} fill={colors[i % colors.length]} />
@@ -464,9 +479,9 @@ function StackedBarChart({
     <ResponsiveContainer width="100%" height={280}>
       <BarChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
+        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-        <Tooltip formatter={(v) => formatValue(Number(v))} />
+        <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Legend />
         {groups.map((g, i) => (
           <Bar key={g} dataKey={g} stackId="a" fill={colors[i % colors.length]} radius={i === groups.length - 1 ? [3, 3, 0, 0] : undefined} />
@@ -499,9 +514,9 @@ function GroupedBarChart({
     <ResponsiveContainer width="100%" height={280}>
       <BarChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
+        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-        <Tooltip formatter={(v) => formatValue(Number(v))} />
+        <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Legend />
         {groups.map((g, i) => (
           <Bar key={g} dataKey={g} fill={colors[i % colors.length]} radius={[3, 3, 0, 0]} />
@@ -542,9 +557,9 @@ function StackedAreaChartView({
           ))}
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" />
+        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-        <Tooltip formatter={(v) => formatValue(Number(v))} />
+        <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Legend />
         {groups.map((g, i) => (
           <Area
@@ -747,9 +762,9 @@ function ErrorBarChart({
     <ResponsiveContainer width="100%" height={260}>
       <ComposedChart data={rechartData} margin={{ top: 8, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
+        <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
-        <Tooltip formatter={(v) => formatValue(Number(v))} />
+        <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
         <Bar dataKey="value" fill={primary} fillOpacity={0.7} radius={[3, 3, 0, 0]}>
           <ErrorBar dataKey="errorY" width={4} strokeWidth={2} stroke={primary} direction="y" />
         </Bar>

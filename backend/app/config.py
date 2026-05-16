@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     AZURE_AGENT_ID: str = ""
     AZURE_AGENT_VERSION: str = "1"
     AZURE_DEPLOYMENT_NAME: str = "gpt-4o"
+    AZURE_OPENAI_API_KEY: str = ""
+    AZURE_OPENAI_ENDPOINT: str = "https://makeathon-ai-foundry.cognitiveservices.azure.com/"
 
     # Supabase direct DB connection (for SQL queries)
     SUPABASE_DB_URL: str = ""
@@ -22,3 +24,8 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
+
+
+
+
+

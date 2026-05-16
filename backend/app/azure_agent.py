@@ -1,10 +1,7 @@
 import json
 from pathlib import Path
 
-# pyrefly: ignore [missing-import]
-from azure.ai.projects import AIProjectClient
-# pyrefly: ignore [missing-import]
-from azure.identity import DefaultAzureCredential
+from openai import AzureOpenAI
 
 from app.config import settings
 from app.query_engine import execute_query, normalize_data
@@ -118,15 +115,15 @@ TOOLS = [
 
 
 def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[str, dict | None]:
-    if not settings.AZURE_AI_PROJECT_ENDPOINT:
+    if not settings.AZURE_OPENAI_ENDPOINT or not settings.AZURE_OPENAI_API_KEY:
         return "Azure AI is not configured.", None
 
     try:
-        project_client = AIProjectClient(
-            endpoint=settings.AZURE_AI_PROJECT_ENDPOINT,
-            credential=DefaultAzureCredential(),
+        openai_client = AzureOpenAI(
+            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_version="2024-02-15-preview",
+            azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
         )
-        openai_client = project_client.get_openai_client()
     except Exception as e:
         return f"Failed to connect to Azure AI: {e}", None
 
@@ -185,7 +182,18 @@ def call_agent(user_message: str, history: list[dict] | None = None) -> tuple[st
 
         if chart_args:
             sql = chart_args.get("sql", "")
-            chart_type = chart_args.get("chart_type", "bar")
+            raw_type = chart_args.get("chart_type", "bar").lower()
+            if "pie" in raw_type:
+                chart_type = "pie"
+            elif "line" in raw_type:
+                chart_type = "line"
+            elif "area" in raw_type:
+                chart_type = "area"
+            elif "kpi" in raw_type:
+                chart_type = "kpi"
+            else:
+                chart_type = "bar"
+                
             try:
                 rows = execute_query(sql)
                 data = normalize_data(rows, chart_type)

@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    const backendRes = await fetch(`${BACKEND_URL}/api/chat`, {
+    const backendRes = await fetch(`${BACKEND_URL}/api/chat-stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -17,10 +17,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(data, { status: backendRes.status });
     }
 
-    const data = await backendRes.json();
-    const sse = `event: final\ndata: ${JSON.stringify(data)}\n\n`;
-
-    return new NextResponse(sse, {
+    // Return the stream directly to the client
+    return new NextResponse(backendRes.body, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",

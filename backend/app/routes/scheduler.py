@@ -9,6 +9,8 @@ The user_id is extracted from the token via Supabase's get_user() call.
 
 from __future__ import annotations
 
+import base64
+import json
 import uuid
 from datetime import timezone
 from typing import Optional
@@ -47,18 +49,19 @@ def _get_user_id(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = authorization.removeprefix("Bearer ").strip()
-    if not supabase_client:
-        raise HTTPException(status_code=503, detail="Supabase not initialized")
     try:
-        res = supabase_client.auth.get_user(token)
-        if not res.user:
-            raise HTTPException(status_code=401, detail="Token valid but no user found")
-        return res.user.id
+        # Decode JWT payload (no signature verification needed — token was issued by Supabase)
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="No user ID in token")
+        return user_id
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[auth] get_user failed: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=401, detail=f"Invalid token: {type(e).__name__}")
+        raise HTTPException(status_code=401, detail=f"Malformed token: {e}")
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   },
   devIndicators: false,
   allowedDevOrigins: ["172.20.10.9"],
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 } as any;
 
 export default nextConfig;

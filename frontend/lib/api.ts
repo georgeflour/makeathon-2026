@@ -35,7 +35,6 @@ export async function sendChatMessage(
   message: string,
   history: ChatMessage[]
 ): Promise<ChatResponse> {
-  // Always call our own Next.js proxy route — works from any device (no CORS issues)
   const res = await fetch(`/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,7 +46,35 @@ export async function sendChatMessage(
     throw new Error(err || "Failed to send message");
   }
 
-  return res.json();
+  // Backend returns SSE — read the stream and return the "final" event's data
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No reader available");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    let eventType = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        eventType = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        const data = JSON.parse(line.slice(6).trim());
+        if (eventType === "final") return data as ChatResponse;
+        if (eventType === "error") throw new Error(data.message);
+        eventType = "";
+      }
+    }
+  }
+
+  throw new Error("Stream ended without a final response");
 }
 
 export async function getHealth() {

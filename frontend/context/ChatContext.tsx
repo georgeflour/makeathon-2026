@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  sendChatMessage,
   type ChatMessage as ApiChatMessage,
   type ChartSpec,
   type Widget,
@@ -455,64 +454,138 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const messageIndex = chat.messages.findIndex((m) => m.id === messageId);
       if (messageIndex === -1) return;
 
-      // Truncate messages after this message and update the edited message
       const truncatedMessages = chat.messages.slice(0, messageIndex);
-      const editedUserMsg: Message = {
-        ...chat.messages[messageIndex],
-        content: newText,
-      };
-
-      const finalMessages = [...truncatedMessages, editedUserMsg];
-
-      setChats((prev) =>
-        prev.map((c) =>
-          c.id === chatId
-            ? {
-                ...c,
-                messages: finalMessages,
-              }
-            : c
-        )
-      );
-
-      setIsLoading(true);
+      const editedUserMsg: Message = { ...chat.messages[messageIndex], content: newText };
+      const messagesUpToEdit = [...truncatedMessages, editedUserMsg];
 
       const history: ApiChatMessage[] = truncatedMessages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
+      // Create a streaming assistant placeholder — same as sendMessage
+      const assistantMsgId = crypto.randomUUID();
+      const assistantPlaceholder: Message = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "",
+        steps: [],
+      };
+
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === chatId
+            ? { ...c, messages: [...messagesUpToEdit, assistantPlaceholder] }
+            : c
+        )
+      );
+
+      setIsLoading(true);
+
       try {
-        const data = await sendChatMessage(newText, history);
-        const assistantMsg: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.answer,
-          chart: data.chart,
-        };
-        setChats((prev) => {
-          const next = prev.map((c) =>
-            c.id === chatId ? { ...c, messages: [...finalMessages, assistantMsg] } : c
-          );
-          const updated = next.find((c) => c.id === chatId);
-          if (updated) syncChat(updated);
-          return next;
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: newText, history }),
+          signal: controller.signal,
         });
+
+        if (!response.ok) throw new Error("Failed to send message");
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No reader available");
+
+        const decoder = new TextDecoder();
+        let finished = false;
+
+        while (!finished) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (!line.trim() || !line.startsWith("data: ")) continue;
+            const dataStr = line.replace("data: ", "").trim();
+            const eventType = lines[lines.indexOf(line) - 1]?.replace("event: ", "").trim();
+
+            try {
+              const data = JSON.parse(dataStr);
+
+              if (eventType === "step") {
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === chatId
+                      ? {
+                          ...c,
+                          messages: c.messages.map((m) =>
+                            m.id === assistantMsgId
+                              ? { ...m, steps: [...(m.steps || []), data] }
+                              : m
+                          ),
+                        }
+                      : c
+                  )
+                );
+              } else if (eventType === "final") {
+                setChats((prev) => {
+                  const next = prev.map((c) =>
+                    c.id === chatId
+                      ? {
+                          ...c,
+                          messages: c.messages.map((m) =>
+                            m.id === assistantMsgId
+                              ? { ...m, content: data.answer, chart: data.chart }
+                              : m
+                          ),
+                        }
+                      : c
+                  );
+                  const updated = next.find((c) => c.id === chatId);
+                  if (updated) syncChat(updated);
+                  return next;
+                });
+                finished = true;
+              } else if (eventType === "error") {
+                throw new Error(data.message);
+              }
+            } catch (e) {
+              console.error("Parse error", e);
+            }
+          }
+        }
       } catch (err) {
-        const errorMsg: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: err instanceof Error ? err.message : "Something went wrong.",
-        };
-        setChats((prev) => {
-          const next = prev.map((c) =>
-            c.id === chatId ? { ...c, messages: [...finalMessages, errorMsg] } : c
-          );
-          const updated = next.find((c) => c.id === chatId);
-          if (updated) syncChat(updated);
-          return next;
-        });
+        if (err instanceof Error && err.name === "AbortError") {
+          setChats((prev) => {
+            const updated = prev.find((c) => c.id === chatId);
+            if (updated) syncChat(updated);
+            return prev;
+          });
+        } else {
+          setChats((prev) => {
+            const next = prev.map((c) =>
+              c.id === chatId
+                ? {
+                    ...c,
+                    messages: c.messages.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, content: err instanceof Error ? err.message : "Something went wrong." }
+                        : m
+                    ),
+                  }
+                : c
+            );
+            const updated = next.find((c) => c.id === chatId);
+            if (updated) syncChat(updated);
+            return next;
+          });
+        }
       } finally {
+        abortControllerRef.current = null;
         setIsLoading(false);
       }
     },

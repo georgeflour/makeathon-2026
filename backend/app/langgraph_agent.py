@@ -36,7 +36,7 @@ import operator
 from langchain_openai import AzureChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
@@ -152,87 +152,155 @@ Return ONLY a JSON object — no prose, no markdown fences:
     ("human", "{user_message}"),
 ])
 
-_SQL_SYSTEM = f"""\
-You are a PostgreSQL expert for NR2Dashboard.
-Write a correct SQL SELECT query and validate it using the run_query tool.
+_SQL_SYSTEM = """\
+You are a PostgreSQL expert for NR2Dashboard, a banking voicebot analytics platform.
+Your ONLY job is to write and validate a SQL SELECT query using the run_query tool.
 
-== DATABASE SCHEMA ==
-{_SCHEMA}
+== IMPORTANT: SUPABASE FLAT TABLES (PostgreSQL) ==
+Do NOT use DuckDB syntax, nested structs, or dot-notation column access.
+Do NOT use conversations_raw, v_conversations, or any view names.
+Use ONLY these five flat tables with the exact columns listed below.
 
-== METRICS DEFINITIONS ==
-{_METRICS}
+-- TABLE: conversations
+   conversation_id    TEXT  (primary key)
+   agent_id           TEXT  (e.g. 'agt_bank_voicebot_v2_2_1')
+   agent_name         TEXT
+   user_id            TEXT
+   status             TEXT
+   start_time         TIMESTAMPTZ
+   start_date         DATE   ← use this for daily/weekly grouping
+   start_hour         INT    (0-23)
+   start_dow          INT    (0=Sunday … 6=Saturday)
+   call_duration_secs BIGINT
+   cost_amount        FLOAT
+   cost_currency      TEXT   (always 'EUR')
+   call_direction     TEXT
+   from_number        TEXT
+   termination_reason TEXT   ('completed'|'transferred_to_human'|'caller_hung_up'|'silence_timeout')
+   bot_version        TEXT   ('2.2.1' or '2.3.0')
+   transcript_summary TEXT
+   call_successful    TEXT   ('success'|'failure'|'unknown')
+   main_language      TEXT   ('el'|'en')
+   segment            TEXT   ('new'|'returning'|'premium'|'business'|'unknown')
+   region             TEXT   ('attica'|'thessaloniki'|'crete'|'patras'|'larissa'|'other_gr'|'international')
+   csat_score         FLOAT  (1.0–5.0, NULL if not surveyed ~70% of calls)
+   csat_collected     BOOL
+   outcome            TEXT   ('resolved'|'escalated'|'abandoned'|'timeout')
+
+-- TABLE: turns
+   id                 BIGINT (PK)
+   conversation_id    TEXT   (FK → conversations)
+   start_time         TIMESTAMPTZ
+   agent_id           TEXT
+   main_language      TEXT
+   role               TEXT   ('agent'|'user')
+   time_in_call_secs  BIGINT
+   message            TEXT
+   detected_intent    TEXT   (populated on user turns that surface an intent)
+   intent_confidence  FLOAT
+   sentiment          TEXT   ('positive'|'neutral'|'negative')
+   turn_number        BIGINT
+   tool_calls_count   BIGINT
+
+-- TABLE: evaluations
+   id                 BIGINT (PK)
+   conversation_id    TEXT   (FK → conversations)
+   start_time         TIMESTAMPTZ
+   agent_id           TEXT
+   bot_version        TEXT
+   main_language      TEXT
+   segment            TEXT
+   region             TEXT
+   criterion_id       TEXT   ('authentication_completed'|'intent_resolved'|'escalation_triggered'|
+                               'compliance_disclaimer_given'|'pii_handled_safely'|
+                               'fallback_count_acceptable'|'language_consistency'|'tool_call_success_rate')
+   result             TEXT   ('success'|'failure'|'unknown')
+   rationale          TEXT
+
+-- TABLE: data_collection
+   id                 BIGINT (PK)
+   conversation_id    TEXT   (FK → conversations)
+   start_time         TIMESTAMPTZ
+   agent_id           TEXT
+   bot_version        TEXT
+   main_language      TEXT
+   segment            TEXT
+   region             TEXT
+   field_id           TEXT   ('customer_segment'|'region'|'declared_language'|'caller_line_type'|
+                               'account_type_referenced'|'transfer_amount_bucket'|
+                               'transfer_destination_country'|'card_type_referenced'|
+                               'loan_type_inquired'|'auth_method_used'|'self_service_completed'|
+                               'promised_callback'|'complaint_detected'|'topic_tags')
+   value              TEXT
+   rationale          TEXT
+
+-- TABLE: tool_calls
+   id                 BIGINT (PK)
+   conversation_id    TEXT   (FK → conversations)
+   start_time         TIMESTAMPTZ
+   agent_id           TEXT
+   main_language      TEXT
+   time_in_call_secs  BIGINT
+   tool_name          TEXT
+   success            BOOLEAN
+   latency_ms         BIGINT
 
 == SQL RULES ==
-- Available flat tables: conversations, turns, evaluations, data_collection, tool_calls
-- bar/pie/line/area: exactly 2 columns — label (string), value (numeric). Always alias.
-- kpi: 1 row, 1 numeric column.
-- Limit bar/pie to 20 rows max.
-- Always ALIAS computed columns: AVG(...) AS containment_rate
-- Joins on turns: use DISTINCT conversation_id subquery to avoid duplicates.
+- Use ONLY the five tables above. No other tables or views exist.
+- bar/pie/line/area: return exactly 2 columns — label (string) first, numeric value second. Always alias both.
+- kpi: return 1 row with 1 numeric column.
+- Limit bar/pie results to 20 rows max. Use ORDER BY + LIMIT.
+- Always ALIAS computed columns: e.g. COUNT(*) AS call_count, AVG(...) AS containment_rate
+- When joining turns for intent: wrap in a subquery with DISTINCT conversation_id to avoid row duplication.
 - Rates/percentages: decimals 0-1 ONLY. NEVER multiply by 100.
-- Containment rate: AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END)
+- Containment rate formula: AVG(CASE WHEN call_successful = 'success' THEN 1.0 ELSE 0.0 END)
+- For daily queries use start_date (DATE column on conversations) — do NOT cast start_time.
+- For customer segment use the segment column directly on conversations (do NOT join data_collection for this).
+- For criterion pass rate: AVG(CASE WHEN result = 'success' THEN 1.0 ELSE 0.0 END) on evaluations, filtered by criterion_id.
+- For tool reliability: AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END) on tool_calls, grouped by tool_name.
 
-== COLUMN ACCESS GUIDE ==
-The `conversations` table has these direct columns:
-  conversation_id, agent_id, user_id, call_successful, call_duration_secs,
-  main_language, bot_version, start_date, start_hour, start_dow, csat_score,
-  outcome, region, termination_reason
+== METRICS QUICK REFERENCE ==
+- containment_rate  : AVG(CASE WHEN call_successful='success' THEN 1.0 ELSE 0.0 END) on conversations
+- csat              : AVG(csat_score) WHERE csat_score IS NOT NULL on conversations
+- aht               : AVG(call_duration_secs) on conversations
+- volume            : COUNT(*) on conversations (or turns)
+- cost_per_call     : AVG(cost_amount) on conversations
+- escalation_rate   : AVG(CASE WHEN outcome='escalated' THEN 1.0 ELSE 0.0 END) on conversations
 
-The `conversations` table does NOT have a `segment` column directly.
-To get customer segment, join with data_collection:
-  JOIN data_collection dc ON dc.conversation_id = c.conversation_id
-  WHERE dc.field_id = 'customer_segment'
-  -- then use dc.value AS the segment label
-
-Similarly for other data_collection fields (region, declared_language, etc.):
-  field_id = 'region' | 'declared_language' | 'caller_line_type' | 'customer_segment'
-  -- use dc.value for the label
-
-The `turns` table has: conversation_id, role, time_in_call_secs, message,
-  detected_intent, intent_confidence, sentiment, turn_number
-
-The `evaluations` table has: conversation_id, criterion_id, result, rationale
-
-The `tool_calls` table has: conversation_id, turn_number, tool_name, success, latency_ms
-
-WORKFLOW:
-1. Call run_query to validate your SQL.
-2. If it errors with "column does not exist", check the COLUMN ACCESS GUIDE above and fix.
-3. Fix and retry on errors (max 4 attempts).
-4. When rows come back cleanly, stop calling tools and reply with plain text:
-   FINAL_SQL: <the validated sql>
-   ANSWER: <concise natural-language answer in the same language as the question>
+== WORKFLOW ==
+Step 1: Call run_query with your SQL.
+Step 2: If it returns a "Query error", read the error, fix the SQL, and call run_query again.
+Step 3: Once run_query returns actual data rows (a JSON array that is NOT an error string),
+        stop calling tools and write a plain-text reply:
+        - One short sentence answering the user's question in their language.
+        - Do NOT call run_query again after receiving rows.
+        - Do NOT output JSON. Plain text only.
 """
 
-# Use mustache template_format so that embedded JSON { } from _CHARTS / _PALLETS
-# are treated as literal characters (not template variables). Mustache variables
-# use {{double_braces}} syntax, which doesn't conflict with JSON content.
-_CHART_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", f"""\
-You are a data visualisation expert for NR2Dashboard.
-Given the analytical question and context, decide the best chart specification.
+# Escape { } in the JSON content so LangChain's template parser
+# doesn't try to interpret them as variable placeholders.
+_CHARTS_ESC  = _CHARTS.replace("{", "{{").replace("}", "}}")
+_PALLETS_ESC = _PALLETS.replace("{", "{{").replace("}", "}}")
 
-== CHART GUIDE ==
-{_CHARTS}
-
-== PALETTE GUIDE ==
-{_PALLETS}
-
-== RULES ==
-- Values 0-1 are rates — never multiply by 100.
-- Containment rate threshold = 0.85; always add color_rules for containment charts.
-
-Return ONLY a JSON object — no prose, no markdown fences:
-{{
-  "chart_type": "<bar|line|area|pie|kpi|scatter>",
-  "title": "<short descriptive title>",
-  "palette": "<vega-lite-name from PALETTE GUIDE>",
-  "explanation": "<one sentence describing what the chart shows>",
-  "color_rules": null
-}}
-For containment: set color_rules to {{"threshold": 0.85, "above": "purple", "below": "orange"}}"""),
-    ("human", "Question: {{enhanced_prompt}}\nContext: {{rag_context}}{{feedback}}"),
-], template_format="mustache")
+_CHART_SYSTEM = (
+    "You are a data visualisation expert for NR2Dashboard.\n"
+    "Given the analytical question and context, decide the best chart specification.\n\n"
+    "== CHART GUIDE ==\n"
+    + _CHARTS_ESC +
+    "\n\n== PALETTE GUIDE ==\n"
+    + _PALLETS_ESC +
+    "\n\n== RULES ==\n"
+    "- Values 0-1 are rates — never multiply by 100.\n"
+    "- Containment rate threshold = 0.85; always add color_rules for containment charts.\n\n"
+    "Return ONLY a JSON object — no prose, no markdown fences:\n"
+    '{{"chart_type": "<bar|line|area|pie|kpi|scatter>",\n'
+    ' "title": "<short descriptive title>",\n'
+    ' "palette": "<vega-lite-name from PALETTE GUIDE>",\n'
+    ' "explanation": "<one sentence describing what the chart shows>",\n'
+    ' "color_rules": null}}\n'
+    "For containment charts set color_rules to:\n"
+    '{{"threshold": 0.85, "above": "purple", "below": "orange"}}\n'
+)
 
 _JUDGE_PROMPT = ChatPromptTemplate.from_messages([
     ("system", """\
@@ -242,7 +310,7 @@ Evaluate whether the SQL result and chart spec correctly answer the user questio
 Score criteria (each pass/fail):
 1. sql_correct       — SQL logically answers the question
 2. shape_match       — columns match chart_type requirements
-3. data_non_empty    — rows were returned
+3. data_non_empty    — rows were returned (sql_rows is not empty)
 4. chart_appropriate — chart type fits the data
 5. answer_relevant   — answer text addresses the question
 
@@ -250,15 +318,17 @@ Pass threshold: score >= 4 AND sql_correct = true AND data_non_empty = true.
 
 Return ONLY a JSON object — no prose, no markdown fences:
 {{
-  "passed": true|false,
-  "score": <0-5>,
-  "failures": ["<criterion>"],
-  "feedback": "<one actionable sentence if failed, else empty string>"
+  "passed": true,
+  "score": 5,
+  "failures": [],
+  "feedback": ""
 }}"""),
     ("human", """\
 User question: {original_message}
 
 SQL: {sql}
+
+Row count: {row_count}
 
 Sample rows (first 5):
 {sample_rows}
@@ -286,10 +356,9 @@ def _parse_json(text: str) -> dict:
 
 # ---------------------------------------------------------------------------
 # Node 1 — Prompt enhancer
-# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_enhance_prompt(state: AgentState) -> dict:
-    print("[node_enhance_prompt] START")
+    print("[enhance_prompt] START")
     chain  = _ENHANCER_PROMPT | llm_fast
     result = chain.invoke({"user_message": state["original_message"]})
 
@@ -302,25 +371,26 @@ def node_enhance_prompt(state: AgentState) -> dict:
             f"Suggested chart: {chart_hint}. Language: {language}. "
             f"Available palettes: tableau10, viridis, redblue, spectral, blues, dark2."
         )
-        print(f"[node_enhance_prompt] Enhanced: {enhanced!r}")
+        print(f"[enhance_prompt] → {enhanced!r}")
     except Exception as e:
-        print(f"[node_enhance_prompt] Parse failed: {e}, using original")
+        print(f"[enhance_prompt] parse failed ({e}), using original")
         enhanced    = state["original_message"]
         rag_context = "Suggested chart: bar. Language: en."
 
     return {
         "enhanced_prompt": enhanced,
         "rag_context":     rag_context,
-        "messages":        [],  # reset message list for sql agent
+        "messages":        [],
     }
 
 
 # ---------------------------------------------------------------------------
 # Node 2 — SQL agent
-# (LangChain: AzureChatOpenAI.bind_tools → ToolNode agentic loop)
+# Key fix: SQL is captured from tool call args (reliable),
+# not from parsing model text output (unreliable).
 # ---------------------------------------------------------------------------
 def node_sql_agent(state: AgentState) -> dict:
-    print("[node_sql_agent] START")
+    print("[sql_agent] START")
     feedback  = state.get("judge_feedback", "")
     user_text = state["enhanced_prompt"]
     if feedback:
@@ -331,50 +401,69 @@ def node_sql_agent(state: AgentState) -> dict:
         HumanMessage(content=user_text),
     ]
 
-    sql    = ""
-    answer = ""
+    last_good_sql  = ""   # last SQL that returned rows (not an error)
+    last_sql_tried = ""   # last SQL submitted (even if it errored)
+    answer         = ""
+    sql_rows: list[dict] = []
 
-    # Agentic tool-use loop — max 6 iterations
     for i in range(6):
-        print(f"[node_sql_agent] LLM call #{i+1}")
+        print(f"[sql_agent] call #{i+1}")
         response = llm_with_tools.invoke(messages)
         messages.append(response)
 
-        # No tool calls → model is done
         if not response.tool_calls:
-            content = response.content or ""
-            for line in content.splitlines():
-                if line.startswith("FINAL_SQL:"):
-                    sql = line.replace("FINAL_SQL:", "").strip()
-                elif line.startswith("ANSWER:"):
-                    answer = line.replace("ANSWER:", "").strip()
-            if not answer:
-                answer = content
-            print(f"[node_sql_agent] Done. sql={sql[:60]!r}")
+            # Model gave a text answer — use it as the answer
+            answer = response.content or ""
+            print(f"[sql_agent] text reply: {answer[:80]!r}")
             break
 
-        # Execute all tool calls via LangChain ToolNode
-        print(f"[node_sql_agent] Running tool calls: {[tc['name'] for tc in response.tool_calls]}")
+        # Run tool calls
+        print(f"[sql_agent] tools: {[tc['name'] for tc in response.tool_calls]}")
         tool_output = _tool_node.invoke({"messages": messages})
-        messages.extend(tool_output["messages"])
+        new_msgs    = tool_output["messages"]
+        messages.extend(new_msgs)
 
-        # Track the last SQL that was submitted
-        for tc in response.tool_calls:
-            if tc["name"] == "run_query":
-                sql = tc["args"].get("sql", sql)
+        # Check each tool call result
+        for tc, tm in zip(response.tool_calls, new_msgs):
+            if tc["name"] != "run_query":
+                continue
 
-    # Fetch rows for judge + assembler
-    sql_rows: list[dict] = []
-    if sql:
+            submitted_sql  = tc["args"].get("sql", "")
+            last_sql_tried = submitted_sql
+            tool_result    = tm.content if isinstance(tm, ToolMessage) else ""
+
+            if tool_result.startswith("Query error"):
+                print(f"[sql_agent] query error: {tool_result[:120]}")
+                # keep looping so model can fix
+            else:
+                # Successful query — capture SQL and rows immediately
+                try:
+                    rows = json.loads(tool_result)
+                    if isinstance(rows, list) and len(rows) > 0:
+                        last_good_sql = submitted_sql
+                        sql_rows      = rows[:50]
+                        print(f"[sql_agent] got {len(sql_rows)} rows ✓")
+                except Exception:
+                    pass
+
+    # Use the best SQL we found
+    final_sql = last_good_sql or last_sql_tried
+
+    # If we still have no rows but have a good SQL, fetch now
+    if not sql_rows and final_sql:
         try:
-            sql_rows = execute_query(sql)[:50]
-            print(f"[node_sql_agent] Fetched {len(sql_rows)} rows")
+            sql_rows = execute_query(final_sql)[:50]
+            print(f"[sql_agent] fallback fetch: {len(sql_rows)} rows")
         except Exception as e:
-            print(f"[node_sql_agent] Row fetch failed: {e}")
+            print(f"[sql_agent] fallback fetch failed: {e}")
 
+    if not answer:
+        answer = f"Here are the results for: {state['enhanced_prompt']}"
+
+    print(f"[sql_agent] DONE — sql={final_sql[:60]!r}, rows={len(sql_rows)}")
     return {
         "messages": messages,
-        "sql":      sql,
+        "sql":      final_sql,
         "sql_rows": sql_rows,
         "answer":   answer,
     }
@@ -382,16 +471,20 @@ def node_sql_agent(state: AgentState) -> dict:
 
 # ---------------------------------------------------------------------------
 # Node 3 — Chart design agent
-# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_chart_agent(state: AgentState) -> dict:
+    print("[chart_agent] START")
     feedback     = state.get("judge_feedback", "")
     feedback_str = (
         f"\n\nJudge feedback: {feedback}\nPlease fix the chart spec."
         if feedback else ""
     )
 
-    chain  = _CHART_PROMPT | llm_fast
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", _CHART_SYSTEM),
+        ("human", "Question: {enhanced_prompt}\nContext: {rag_context}{feedback}"),
+    ])
+    chain  = prompt | llm_fast
     result = chain.invoke({
         "enhanced_prompt": state["enhanced_prompt"],
         "rag_context":     state.get("rag_context", ""),
@@ -400,7 +493,9 @@ def node_chart_agent(state: AgentState) -> dict:
 
     try:
         parsed = _parse_json(result.content)
-    except Exception:
+        print(f"[chart_agent] type={parsed.get('chart_type')}")
+    except Exception as e:
+        print(f"[chart_agent] parse failed ({e}), using defaults")
         parsed = {
             "chart_type":  "bar",
             "title":       state["enhanced_prompt"][:60],
@@ -420,24 +515,29 @@ def node_chart_agent(state: AgentState) -> dict:
 
 # ---------------------------------------------------------------------------
 # Node 4 — Judge
-# (LangChain: ChatPromptTemplate | AzureChatOpenAI)
 # ---------------------------------------------------------------------------
 def node_judge(state: AgentState) -> dict:
     retry_count = state.get("retry_count", 0)
+    print(f"[judge] START (retry #{retry_count})")
 
-    # Hard stop at 3 retries — pass through whatever we have
+    # Hard stop at 3 retries
     if retry_count >= 3:
+        print("[judge] max retries hit — forcing pass")
         return {
             "judge_passed":   True,
             "judge_feedback": "",
             "retry_count":    retry_count,
         }
 
-    sample = json.dumps(state.get("sql_rows", [])[:5], indent=2)
+    sql_rows   = state.get("sql_rows", [])
+    row_count  = len(sql_rows)
+    sample     = json.dumps(sql_rows[:5], indent=2)
+
     chain  = _JUDGE_PROMPT | llm_main
     result = chain.invoke({
         "original_message":  state["original_message"],
         "sql":               state.get("sql", ""),
+        "row_count":         row_count,
         "sample_rows":       sample,
         "chart_type":        state.get("chart_type", ""),
         "chart_title":       state.get("chart_title", ""),
@@ -449,7 +549,10 @@ def node_judge(state: AgentState) -> dict:
         parsed   = _parse_json(result.content)
         passed   = bool(parsed.get("passed", True))
         feedback = parsed.get("feedback", "")
-    except Exception:
+        score    = parsed.get("score", 5)
+        print(f"[judge] score={score}, passed={passed}, feedback={feedback!r}")
+    except Exception as e:
+        print(f"[judge] parse failed ({e}) — defaulting to pass")
         passed   = True
         feedback = ""
 
@@ -464,6 +567,7 @@ def node_judge(state: AgentState) -> dict:
 # Node 5 — Assemble final output
 # ---------------------------------------------------------------------------
 def node_assemble(state: AgentState) -> dict:
+    print("[assemble] START")
     raw_type = state.get("chart_type", "bar").lower()
     if   "pie"     in raw_type: chart_type = "pie"
     elif "line"    in raw_type: chart_type = "line"
@@ -482,6 +586,7 @@ def node_assemble(state: AgentState) -> dict:
     raw_color   = state.get("color_rules")
     color_rules = raw_color if isinstance(raw_color, dict) and raw_color else None
 
+    print(f"[assemble] chart_type={chart_type}, data_len={len(data) if isinstance(data, list) else 1}")
     return {
         "answer": state.get("answer") or "Here is your chart.",
         "chart_dict": {
@@ -498,9 +603,10 @@ def node_assemble(state: AgentState) -> dict:
 
 # ---------------------------------------------------------------------------
 # Retry node — re-runs sql + chart agents with judge feedback
-# (sequential, no asyncio — safe inside uvicorn's event loop)
+# (sequential — safe inside uvicorn's event loop, no asyncio conflict)
 # ---------------------------------------------------------------------------
 def node_retry(state: AgentState) -> dict:
+    print("[retry] re-running sql + chart agents")
     sql_result   = node_sql_agent(state)
     chart_result = node_chart_agent(state)
     return {**sql_result, **chart_result}
@@ -510,7 +616,9 @@ def node_retry(state: AgentState) -> dict:
 # Routing: after judge → pass or retry
 # ---------------------------------------------------------------------------
 def route_after_judge(state: AgentState) -> str:
-    return "assemble" if state.get("judge_passed", True) else "retry"
+    result = "assemble" if state.get("judge_passed", True) else "retry"
+    print(f"[route_after_judge] → {result}")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -590,4 +698,5 @@ def call_agent(
         final = _get_graph().invoke(initial_state)
         return final.get("answer", "No answer generated."), final.get("chart_dict")
     except Exception as e:
+        print(f"[call_agent] EXCEPTION: {e}")
         return f"Agent error: {e}", None

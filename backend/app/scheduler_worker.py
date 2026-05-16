@@ -14,13 +14,10 @@ has passed. For each due job:
 
 from __future__ import annotations
 
-import smtplib
 import uuid
 from datetime import datetime, timedelta, timezone
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
+import resend
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.config import settings
@@ -139,40 +136,27 @@ async def _run_schedule(schedule: dict) -> None:
 
 
 def _send_email(to: str, schedule_name: str, frequency: str, pdf_bytes: bytes) -> None:
-    if not settings.SMTP_HOST:
-        raise RuntimeError("SMTP_HOST not configured")
+    if not settings.RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY not configured")
+
+    resend.api_key = settings.RESEND_API_KEY
 
     label = "Weekly" if frequency == "weekly" else "Daily"
     date_str = datetime.now(timezone.utc).strftime("%d %b %Y")
-    subject = f"{label} Report - {date_str}"
+    filename = f"report_{date_str.replace(' ', '_')}.pdf"
 
-    msg = MIMEMultipart()
-    msg["From"] = settings.SMTP_FROM_EMAIL
-    msg["To"] = to
-    msg["Subject"] = subject
-
-    msg.attach(MIMEText(
-        f"<p>Hello,</p>"
-        f"<p>Please find attached your <strong>{label.lower()} analytics report</strong> "
-        f"for <em>{schedule_name}</em>.</p>"
-        f"<p>— NR2Dashboard</p>",
-        "html",
-    ))
-
-    attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
-    attachment.add_header(
-        "Content-Disposition",
-        "attachment",
-        filename=f"report_{date_str.replace(' ', '_')}.pdf",
-    )
-    msg.attach(attachment)
-
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-        server.ehlo()
-        server.starttls()
-        if settings.SMTP_USER and settings.SMTP_PASSWORD:
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.sendmail(settings.SMTP_FROM_EMAIL, to, msg.as_string())
+    resend.Emails.send({
+        "from": settings.REPORT_FROM_EMAIL,
+        "to": [to],
+        "subject": f"{label} Report — {date_str}",
+        "html": (
+            f"<p>Hello,</p>"
+            f"<p>Please find attached your <strong>{label.lower()} analytics report</strong> "
+            f"for <em>{schedule_name}</em>.</p>"
+            f"<p>— NR2Dashboard</p>"
+        ),
+        "attachments": [{"filename": filename, "content": list(pdf_bytes)}],
+    })
 
 
 def _update_schedule(

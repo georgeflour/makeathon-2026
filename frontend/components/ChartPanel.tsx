@@ -20,7 +20,7 @@ import {
 import type { ChartSpec } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { getPalette } from "@/lib/palettes";
-import { Plus, Check } from "lucide-react";
+import { Plus, Check, Copy } from "lucide-react";
 import { useState } from "react";
 
 function getBarColor(
@@ -53,6 +53,7 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isSavedLocal, setIsSavedLocal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const savedWidgets = profile?.settings?.saved_widgets || [];
   const alreadySaved = savedWidgets.some((w) => w.chart.sql === sql) || isSavedLocal;
@@ -72,6 +73,14 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
     
     setIsSaving(false);
     setIsSavedLocal(true);
+  };
+
+  const handleCopySql = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(sql);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -190,9 +199,23 @@ export function ChartPanel({ chart, hideSaveButton = false }: Props) {
         </div>
       )}
 
-      <details className="px-4 pb-3">
-        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none">
-          View SQL
+      <details className="px-4 pb-3 group/sql">
+        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <span>View SQL</span>
+            <span className="text-[10px] opacity-50 group-open/sql:rotate-180 transition-transform">▾</span>
+          </div>
+          <button
+            onClick={handleCopySql}
+            className="p-1 hover:bg-muted rounded transition-colors"
+            title="Copy SQL"
+          >
+            {copied ? (
+              <Check className="h-3 w-3 text-emerald-500" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
+          </button>
         </summary>
         <pre className="mt-1 text-xs bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
           {sql}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, Sparkles, Copy, Check, Pencil } from "lucide-react";
+import { ArrowUp, Loader2, Sparkles, Copy, Check, Pencil, Square } from "lucide-react";
 import { useChatContext } from "@/context/ChatContext";
 import { ChartPanel } from "@/components/ChartPanel";
 
@@ -15,7 +15,7 @@ const SUGGESTIONS = [
 ];
 
 export function ChatArea() {
-  const { activeChat, isLoading, sendMessage, editMessage } = useChatContext();
+  const { activeChat, isLoading, sendMessage, stopGeneration, editMessage } = useChatContext();
   const [input, setInput] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -193,7 +193,6 @@ export function ChatArea() {
                                     <span className="text-[9px] text-gray-300 dark:text-white/20 group-open/step:rotate-180 transition-transform inline-block leading-none">▾</span>
                                   </summary>
                                   <CodeBlock code={current.code} />
-                                  {current.sql && <SqlBlock sql={current.sql} />}
                                 </details>
                               ) : (
                                 <span className="text-[12px] text-gray-500 dark:text-white/40">
@@ -233,7 +232,6 @@ export function ChatArea() {
                                       {step.message}
                                     </span>
                                   )}
-                                  {step.sql && <SqlBlock sql={step.sql} />}
                                 </div>
                               ))}
                             </div>
@@ -288,12 +286,12 @@ export function ChatArea() {
               className="flex-1 bg-transparent text-sm text-gray-900 dark:text-white/90 placeholder:text-gray-400 dark:placeholder:text-white/25 outline-none resize-none max-h-[200px] leading-relaxed disabled:opacity-50"
             />
             <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isLoading}
+              onClick={isLoading ? stopGeneration : () => handleSend()}
+              disabled={!isLoading && !input.trim()}
               className="flex-shrink-0 h-8 w-8 rounded-lg bg-gray-900 dark:bg-white flex items-center justify-center text-white dark:text-black hover:bg-gray-700 dark:hover:bg-white/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Square className="h-3.5 w-3.5 fill-current" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
@@ -330,11 +328,28 @@ function CodeBlock({ code }: { code: string }) {
 }
 
 function SqlBlock({ sql }: { sql: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    navigator.clipboard.writeText(sql);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <details className="group/sql mt-1">
       <summary className="list-none flex items-center gap-1.5 cursor-pointer select-none w-fit">
         <span className="text-[11px] text-blue-500/70 dark:text-blue-400/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">View SQL</span>
         <span className="text-[9px] text-blue-400/40 group-open/sql:rotate-180 transition-transform inline-block leading-none">▾</span>
+        <button
+          onClick={handleCopy}
+          className="ml-0.5 p-0.5 rounded text-blue-400/50 hover:text-blue-500 dark:hover:text-blue-400 cursor-pointer transition-colors"
+          title="Copy SQL"
+        >
+          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+        </button>
       </summary>
       <div className="mt-1.5 rounded-lg overflow-hidden border border-blue-100 dark:border-blue-500/10">
         <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-500/5 border-b border-blue-100 dark:border-blue-500/10">

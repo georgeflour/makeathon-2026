@@ -4,7 +4,10 @@ pydantic
 pydantic-settings
 supabase
 azure-ai-projects
+azure-ai-inference
 azure-identity
 psycopg2-binary
 fastmcp
 openai
+langgraph
+langchain-core

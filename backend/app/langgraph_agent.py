@@ -89,6 +89,15 @@ llm_main = _make_llm(_MAIN_MODEL, max_tokens=1000)  # agents 2 & 4
 # ---------------------------------------------------------------------------
 # LangChain Tool — run_query (used by SQL agent)
 # ---------------------------------------------------------------------------
+def _json_safe(obj):
+    """Convert non-JSON-serializable types (Decimal, date, etc.) to native Python."""
+    import decimal, datetime
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
 @tool
 def run_query(sql: str) -> str:
     """
@@ -98,7 +107,7 @@ def run_query(sql: str) -> str:
     """
     try:
         rows = execute_query(sql)
-        return json.dumps(rows[:50])
+        return json.dumps(rows[:50], default=_json_safe)
     except Exception as e:
         return f"Query error: {e}"
 
@@ -367,8 +376,16 @@ def _parse_json(text: str) -> dict:
 # ---------------------------------------------------------------------------
 def node_enhance_prompt(state: AgentState) -> dict:
     print("[enhance_prompt] START")
+    # Build a history summary to give the enhancer context for follow-up questions
+    history = state.get("history", [])
+    history_str = ""
+    if history:
+        recent = history[-4:]  # last 2 turns (user + assistant)
+        history_str = "\n\nRecent conversation context:\n" + "\n".join(
+            f"{m['role'].upper()}: {m['content'][:200]}" for m in recent
+        )
     chain  = _ENHANCER_PROMPT | llm_fast
-    result = chain.invoke({"user_message": state["original_message"]})
+    result = chain.invoke({"user_message": state["original_message"] + history_str})
 
     try:
         parsed      = _parse_json(result.content)
@@ -449,7 +466,8 @@ def node_sql_agent(state: AgentState) -> dict:
                     rows = json.loads(tool_result)
                     if isinstance(rows, list) and len(rows) > 0:
                         last_good_sql = submitted_sql
-                        sql_rows      = rows[:50]
+                        # Re-serialize through _json_safe to normalize Decimal/date
+                        sql_rows = json.loads(json.dumps(rows[:50], default=_json_safe))
                         print(f"[sql_agent] got {len(sql_rows)} rows ✓")
                 except Exception:
                     pass
@@ -461,6 +479,8 @@ def node_sql_agent(state: AgentState) -> dict:
     if not sql_rows and final_sql:
         try:
             sql_rows = execute_query(final_sql)[:50]
+            # Normalize Decimal/date types so judge can json.dumps() them
+            sql_rows = json.loads(json.dumps(sql_rows, default=_json_safe))
             print(f"[sql_agent] fallback fetch: {len(sql_rows)} rows")
         except Exception as e:
             print(f"[sql_agent] fallback fetch failed: {e}")

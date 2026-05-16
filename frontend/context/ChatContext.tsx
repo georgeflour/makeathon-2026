@@ -79,7 +79,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   // Load from Supabase when user is available, fall back to localStorage
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setChats([]);
+      setReports([]);
+      setActiveChatId(null);
+      setActiveReportId(null);
+      return;
+    }
     (async () => {
       const [{ data: chatRows }, { data: reportRows }] = await Promise.all([
         supabase.from("chat_history").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -104,7 +110,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setActiveChatId(parsed[0].id);
       } else {
         try {
-          const saved = localStorage.getItem("httf-chats");
+          const saved = localStorage.getItem(`httf-chats-${user.id}`);
           if (saved) {
             const parsed = JSON.parse(saved) as Chat[];
             setChats(parsed);
@@ -123,7 +129,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         setActiveReportId(parsed[0].id);
       } else {
         try {
-          const saved = localStorage.getItem("httf-reports");
+          const saved = localStorage.getItem(`httf-reports-${user.id}`);
           if (saved) {
             const parsed = JSON.parse(saved) as Report[];
             setReports(parsed);
@@ -145,12 +151,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   useEffect(() => {
-    if (mounted) localStorage.setItem("httf-chats", JSON.stringify(chats));
-  }, [chats, mounted]);
+    if (mounted && user) localStorage.setItem(`httf-chats-${user.id}`, JSON.stringify(chats));
+  }, [chats, mounted, user?.id]);
 
   useEffect(() => {
-    if (mounted) localStorage.setItem("httf-reports", JSON.stringify(reports));
-  }, [reports, mounted]);
+    if (mounted && user) localStorage.setItem(`httf-reports-${user.id}`, JSON.stringify(reports));
+  }, [reports, mounted, user?.id]);
 
   const syncChat = useCallback(
     async (chat: Chat) => {

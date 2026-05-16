@@ -7,13 +7,13 @@ So that every team computes the same number for the same word. If your dashboard
 ## Volume
 
 **Conversations**
-Count of rows in `v_conversations`. Each row is one inbound call.
+Count of rows in `conversations`. Each row is one inbound call.
 
 **Turns**
-Count of rows in `v_turns`. A turn is a single utterance by either party.
+Count of rows in `turns`. A turn is a single utterance by either party.
 
 **Tool calls**
-Count of rows in `v_tool_calls`. A single agent turn can invoke multiple tools.
+Count of rows in `tool_calls`. A single agent turn can invoke multiple tools.
 
 ---
 
@@ -24,7 +24,7 @@ Share of calls where the bot handled the request without human help.
 ```
 containment_rate = COUNT(call_successful = 'success') / COUNT(*)
 ```
-Equivalently, `outcome = 'resolved'` in `dynamic_variables` (these agree by construction).
+Equivalently, `outcome = 'resolved'` in `conversations` (these agree by construction).
 
 **Escalation Rate**
 Share of calls where a human agent took over.
@@ -59,7 +59,7 @@ csat_response_rate = COUNT(csat_score IS NOT NULL) / COUNT(*)  -- typically ~30%
 ```
 
 **Sentiment-Negative Rate**
-Share of turns flagged `negative` in `v_turns`.
+Share of turns flagged `negative` in `turns`.
 
 **Fallback Count**
 A "fallback" is an agent turn that asks the user to repeat / clarify ("Sorry, I didn't catch that"). Quality criterion `fallback_count_acceptable` passes when ≤2 fallbacks occurred.
@@ -78,10 +78,10 @@ aht_secs = AVG(call_duration_secs)
 ```
 
 **Median Handle Time**
-Use `MEDIAN` or `quantile_cont(0.5)`. Often more useful than AHT because the long-tail (escalations) inflates the mean.
+Use `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY call_duration_secs)`. Often more useful than AHT because the long-tail (escalations) inflates the mean.
 
 **Time-to-First-Intent**
-Seconds from call start until the first turn with a non-null `detected_intent`. Lower is better. Available by querying `v_turns` for the minimum `time_in_call_secs` per conversation where `detected_intent IS NOT NULL`.
+Seconds from call start until the first turn with a non-null `detected_intent`. Lower is better. Available by querying `turns` for the minimum `time_in_call_secs` per conversation where `detected_intent IS NOT NULL`.
 
 ---
 
@@ -90,7 +90,7 @@ Seconds from call start until the first turn with a non-null `detected_intent`. 
 **Tool Success Rate**
 Per tool, share of `success = true` invocations.
 ```
-SELECT tool_name, AVG(CAST(success AS DOUBLE)) FROM v_tool_calls GROUP BY 1
+SELECT tool_name, AVG(CAST(success AS DOUBLE PRECISION)) FROM tool_calls GROUP BY 1
 ```
 
 **Tool Latency**
@@ -100,13 +100,13 @@ Median and p95 of `latency_ms` per tool. Latency spikes during incident windows.
 
 ## Evaluation criteria pass rates
 
-Each `criterion_id` in `v_evaluations` has a pass rate:
+Each `criterion_id` in `evaluations` has a pass rate:
 ```
 SELECT criterion_id,
        AVG(CASE WHEN result = 'success' THEN 1.0
                 WHEN result = 'failure' THEN 0.0
                 ELSE NULL END) AS pass_rate
-FROM v_evaluations
+FROM evaluations
 WHERE result IN ('success', 'failure')   -- exclude 'unknown'
 GROUP BY 1
 ```
@@ -132,8 +132,8 @@ cost_per_resolution = SUM(cost_amount) / COUNT(call_successful = 'success')
 **Repeat Caller Rate**
 Share of `user_id`s with more than one call in the window.
 ```
-SELECT COUNT(*) FILTER (WHERE n > 1)::DOUBLE / COUNT(*)
-FROM (SELECT user_id, COUNT(*) AS n FROM v_conversations GROUP BY 1)
+SELECT COUNT(*) FILTER (WHERE n > 1)::FLOAT / COUNT(*)
+FROM (SELECT user_id, COUNT(*) AS n FROM conversations GROUP BY 1)
 ```
 
 **Auth-Failure Cascade**
@@ -147,12 +147,12 @@ The dataset is engineered so the following splits are interesting:
 
 | Dimension | Source | What you'll see |
 | --- | --- | --- |
-| `main_language` (el/en) | `v_conversations` | ~85/15 split, English share rises in summer in tourist regions |
-| `region` | `v_conversations` | Volume concentration in Attica, intent mix differs internationally |
-| `segment` | `v_conversations` | Premium has higher resolution + CSAT; new has the worst |
-| `bot_version` | `v_conversations` | v2.3.0 outperforms v2.2.1 on auth-category metrics |
-| `start_date` / `start_dow` / `start_hour` | `v_conversations` | Seasonality; weekend volume ~30% of weekday |
-| `intent` (`detected_intent`) | `v_turns` (filter to user role + non-null intent) | Pain-points cluster at bottom of CSAT rankings |
-| `criterion_id` × `start_date` | `v_evaluations` | Tool-failure spike during incident window |
+| `main_language` (el/en) | `conversations` | ~85/15 split, English share rises in summer in tourist regions |
+| `region` | `conversations` | Volume concentration in Attica, intent mix differs internationally |
+| `segment` | `conversations` | Premium has higher resolution + CSAT; new has the worst |
+| `bot_version` | `conversations` | v2.3.0 outperforms v2.2.1 on auth-category metrics |
+| `start_date` / `start_dow` / `start_hour` | `conversations` | Seasonality; weekend volume ~30% of weekday |
+| `intent` (`detected_intent`) | `turns` (filter to user role + non-null intent) | Pain-points cluster at bottom of CSAT rankings |
+| `criterion_id` × `start_date` | `evaluations` | Tool-failure spike during incident window |
 
 If a metric in your dashboard doesn't match this dictionary, that's an inconsistency you should fix — it's also one of the criteria a judge might check.

@@ -20,12 +20,21 @@ import { PALETTES } from "@/lib/palettes";
 const STEP_LABELS = ["Welcome", "Appearance", "Charts", "Ready"];
 
 export function OnboardingFlow() {
-  const { completeOnboarding } = useAuth();
+  const { user, completeOnboarding } = useAuth();
   const [step, setStep] = useState(1);
   const [displayName, setDisplayName] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [colorPalette, setColorPalette] = useState("ocean");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (user?.user_metadata && !displayName) {
+      const fullName = user.user_metadata.full_name || user.user_metadata.name || "";
+      if (fullName) {
+        setDisplayName(fullName.split(" ")[0]);
+      }
+    }
+  }, [user, displayName]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");

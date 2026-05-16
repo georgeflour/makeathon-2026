@@ -15,6 +15,7 @@ export interface UserProfile {
     theme?: string;
     saved_widgets?: Widget[];
   };
+  avatar_url?: string | null;
 }
 
 interface AuthContextValue {
@@ -47,7 +48,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single();
 
     if (existing) {
-      setProfile(existing as UserProfile);
+      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      setProfile({ ...(existing as UserProfile), avatar_url });
       return;
     }
 
@@ -66,11 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single();
 
     if (created) {
-      setProfile(created as UserProfile);
+      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      setProfile({ ...(created as UserProfile), avatar_url });
     } else {
       // Insert failed (e.g. RLS or race) — surface locally so onboarding still works
       console.error("Failed to create user profile:", error?.message);
-      setProfile(newProfile as UserProfile);
+      const avatar_url = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null;
+      setProfile({ ...newProfile, avatar_url } as UserProfile);
     }
   }, []);
 

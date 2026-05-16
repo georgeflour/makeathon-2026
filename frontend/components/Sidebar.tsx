@@ -360,11 +360,18 @@ function UserSection({
         Settings
       </Link>
 
-      {/* User profile row */}
       <div className="group flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-200/60 dark:hover:bg-white/5 transition-colors">
-        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0">
-          {initials}
-        </div>
+        {profile?.avatar_url ? (
+          <img
+            src={profile.avatar_url}
+            className="h-7 w-7 rounded-full flex-shrink-0 object-cover border border-gray-200 dark:border-white/10 shadow-sm"
+            alt={displayName}
+          />
+        ) : (
+          <div className="h-7 w-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 shadow-sm">
+            {initials}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-gray-900 dark:text-white truncate leading-tight">
             {displayName}

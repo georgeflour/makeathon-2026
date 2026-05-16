@@ -57,6 +57,16 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
         >
           Dashboard
         </Link>
+        <Link
+          href="/scheduler"
+          className={`self-stretch flex items-center px-3 text-sm font-medium border-b-2 transition-colors ${
+            pathname === "/scheduler"
+              ? "text-blue-600 dark:text-blue-400 border-blue-500"
+              : "text-gray-500 dark:text-white/50 border-transparent hover:text-gray-800 dark:hover:text-white/80"
+          }`}
+        >
+          Scheduler
+        </Link>
       </div>
 
       {/* Right Sidebar toggle (Dashboard only) */}

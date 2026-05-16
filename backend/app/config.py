@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str = ""
     AZURE_OPENAI_ENDPOINT: str = "https://makeathon-ai-foundry.cognitiveservices.azure.com/"
 
+    # SMTP (scheduled report emails)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+
     # Supabase direct DB connection (for SQL queries)
     SUPABASE_DB_URL: str = ""
 

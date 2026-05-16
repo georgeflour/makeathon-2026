@@ -3,14 +3,15 @@
 import { useChatContext } from "@/context/ChatContext";
 import { DashboardRightSidebar } from "@/components/DashboardRightSidebar";
 import { ChartPanel } from "@/components/ChartPanel";
-import { LayoutDashboard, Plus, Trash2, Download } from "lucide-react";
+import { Plus, Trash2, Download } from "lucide-react";
 import type { Widget } from "@/lib/api";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function DashboardPage() {
   const {
     activeReportId,
     reports,
+    addReport,
     updateReport,
     setIsRightSidebarOpen,
     isRightSidebarOpen,
@@ -19,6 +20,14 @@ export default function DashboardPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   const activeReport = reports.find((r) => r.id === activeReportId);
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    if (!activeReport && !initialized.current) {
+      initialized.current = true;
+      addReport();
+    }
+  }, []);
   const widgets = activeReport?.widgets || [];
 
   const downloadPdf = async () => {
@@ -95,21 +104,7 @@ export default function DashboardPage() {
   };
 
   if (!activeReport) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center bg-white dark:bg-[#111] px-4">
-        <div className="text-center space-y-4">
-          <div className="h-16 w-16 rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 flex items-center justify-center mx-auto">
-            <LayoutDashboard className="h-8 w-8 text-gray-300 dark:text-white/20" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">No active report</h1>
-            <p className="text-sm text-gray-500 dark:text-white/40 mt-1 max-w-xs mx-auto">
-              Select or create a report from the sidebar to start building your dashboard.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (

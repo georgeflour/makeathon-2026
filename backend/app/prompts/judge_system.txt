@@ -24,7 +24,8 @@ radial, nightingale, stream
                          candlestick      → 5 cols (date, open, close, high, low)
 3. data_non_empty    — sql_rows is not empty (at least 1 row returned)
 4. chart_appropriate — chart type fits the data shape and question intent
-                         (pie only if <= 5 categories, kpi only if 1 row, etc.)
+                         CRITICAL RULE: If the user explicitly requested or implied a specific chart type (e.g. 'bar chart', 'line chart', 'pie chart', 'radial', etc.), the chosen chart type MUST match what the user requested. NEVER suggest changing the chart type or reject the chart type if it matches the user's explicit or implied request, unless it is mathematically impossible to render (e.g., asking for a KPI card on a multi-row query, or a pie chart with more than 5 slices).
+                         Otherwise (if the user did not specify a type), pie is only for <= 5 categories, kpi is only for 1 row, etc.
                          IMPORTANT: wordcloud, tick, histogram, radar, span, errorbar, boxplot
                          are all valid chart types — do NOT reject them as unsupported
 5. answer_relevant   — the plain-text answer sentence addresses the user's question in their language
@@ -36,6 +37,8 @@ passed = true ONLY IF:  score >= 4  AND  sql_correct = true  AND  data_non_empty
 If passed = false, write ONE specific actionable instruction for the chart agent.
 Focus on SQL correctness, data shape, or chart appropriateness — NOT on chart type
 unless the type is genuinely wrong for the question (e.g. kpi for multi-row data).
+
+CRITICAL RULE: If the user explicitly requested or implied a specific chart type, NEVER change the chart type requested by the user. If the user explicitly requested a chart type, keep it. Do not recommend converting it to another type unless it is physically impossible to render (e.g., more than 5 slices in a pie, or multiple rows/columns in a KPI card).
 
 NEVER reject a chart type that appears in the SUPPORTED CHART TYPES list above.
 

@@ -188,8 +188,8 @@ def _make_llm(deployment: str, max_tokens: int) -> AzureChatOpenAI:
     )
 
 
-llm_fast = _make_llm(_FAST_MODEL, max_tokens=500)    # agents 1 & 3
-llm_main = _make_llm(_MAIN_MODEL, max_tokens=1200)   # agents 2 & 4
+llm_fast = _make_llm(_MAIN_MODEL, max_tokens=2000)    # agents 1 & 3
+llm_main = _make_llm(_MAIN_MODEL, max_tokens=2000)   # agents 2 & 4
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +394,18 @@ def node_enhance_prompt(state: AgentState) -> dict:
         recent = history[-4:]
         history_str = "\n\nRecent conversation context:\n" + "\n".join(
             f"{m['role'].upper()}: {m['content']}" for m in recent
+        )
+
+    # Collaborative loop: if the judge previously failed, feed all details to the Enhancer
+    feedback = state.get("judge_feedback", "")
+    if feedback:
+        retry_count = state.get("retry_count", 0)
+        history_str += (
+            f"\n\n[ATTEMPT #{retry_count} CRITIQUE & PREVIOUS STATE]\n"
+            f"The Quality-Control Judge failed the previous response with this feedback: {feedback}\n"
+            f"Previous generated SQL: {state.get('sql', '')}\n"
+            f"Previous selected chart type: {state.get('chart_type', '')}\n"
+            f"Previous text answer: {state.get('answer', '')}"
         )
 
     chain  = _ENHANCER_PROMPT | llm_main
@@ -934,9 +946,17 @@ def node_retry(state: AgentState) -> dict:
 # Routing: after judge
 # ---------------------------------------------------------------------------
 def route_after_judge(state: AgentState) -> str:
-    result = "assemble" if state.get("judge_passed", True) else "retry"
-    print(f"[route_after_judge] → {result}")
-    return result
+    if state.get("judge_passed", True):
+        print("[route_after_judge] → assemble (pass)")
+        return "assemble"
+
+    retry_count = state.get("retry_count", 0)
+    if retry_count >= 3:
+        print("[route_after_judge] max retries hit — forcing pass/assemble")
+        return "assemble"
+
+    print(f"[route_after_judge] → enhance_prompt (loop-back retry #{retry_count})")
+    return "enhance_prompt"
 
 
 # ---------------------------------------------------------------------------
@@ -949,7 +969,6 @@ def _build_graph():
     graph.add_node("sql_agent",      node_sql_agent)
     graph.add_node("chart_agent",    node_chart_agent)
     graph.add_node("judge",          node_judge)
-    graph.add_node("retry",          node_retry)
     graph.add_node("assemble",       node_assemble)
 
     # Always go enhance → sql + chart in parallel (sql/chart no-op for conversational)
@@ -961,9 +980,8 @@ def _build_graph():
     graph.add_conditional_edges(
         "judge",
         route_after_judge,
-        {"assemble": "assemble", "retry": "retry"},
+        {"assemble": "assemble", "enhance_prompt": "enhance_prompt"},
     )
-    graph.add_edge("retry",    "judge")
     graph.add_edge("assemble", END)
 
     return graph.compile()

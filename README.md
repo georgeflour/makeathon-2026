@@ -2,6 +2,9 @@
 Made with love.
 This is a clean, scalable starter project for a 2-day hackathon. It features a Next.js 15 frontend and a FastAPI backend with Supabase and Azure AI Agent integrations.
 
+## Demo Video
+Take a look at the application [here](https://drive.google.com/file/d/1U5PQtRkKatdhyLi2urOWuLa7JfCQFOjS/view?usp=sharing)
+
 ## Features
 - **Frontend**: Next.js 15 (App Router), TypeScript, Tailwind CSS, shadcn-like UI structure.
 - **Backend**: FastAPI, connected to Supabase for data and Azure AI Foundry for agentic chats.

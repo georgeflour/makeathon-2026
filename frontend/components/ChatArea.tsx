@@ -123,7 +123,7 @@ export function ChatArea() {
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           /* ── Empty state ── */
-          <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
+          <div className="flex flex-col items-center justify-start sm:justify-center min-h-full px-4 pt-8 sm:pt-0 pb-8 sm:pb-32">
             <div className="mb-8 text-center">
               <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 mx-auto mb-4 flex items-center justify-center">
                 <Sparkles className="h-6 w-6 text-white" />

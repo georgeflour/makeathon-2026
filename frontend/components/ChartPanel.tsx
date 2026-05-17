@@ -195,7 +195,7 @@ function StackedBarChart({ data, colors, height }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Bar key={`${String(g)}-${i}`} dataKey={String(g)} stackId="a" fill={colors[i % colors.length]} radius={i === groups.length - 1 ? [3, 3, 0, 0] : undefined} />
         ))}
@@ -223,7 +223,7 @@ function GroupedBarChart({ data, colors, height }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Bar key={`${String(g)}-${i}`} dataKey={String(g)} fill={colors[i % colors.length]} radius={[3, 3, 0, 0]} />
         ))}
@@ -246,7 +246,7 @@ function StackedAreaChartView({ data, colors, height }: ChartProps) {
   });
   return (
     <ResponsiveContainer width="100%" height={height ?? 260}>
-      <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+      <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <defs>
           {groups.map((g, i) => (
             <linearGradient key={`grad-${String(g)}-${i}`} id={`areaG_${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -259,7 +259,7 @@ function StackedAreaChartView({ data, colors, height }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Area key={`${String(g)}-${i}`} type="monotone" dataKey={String(g)} stackId="a" stroke={colors[i % colors.length]} fill={`url(#areaG_${i})`} fillOpacity={1} />
         ))}
@@ -627,7 +627,7 @@ function StreamChartView({ data, colors, height }: ChartProps) {
   });
   return (
     <ResponsiveContainer width="100%" height={height ?? 260}>
-      <ComposedChart data={pivoted} stackOffset="silhouette" margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+      <ComposedChart data={pivoted} stackOffset="silhouette" margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <defs>
           {groups.map((g, i) => (
             <linearGradient key={`grad-stream-${String(g)}-${i}`} id={`streamG_${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -640,7 +640,7 @@ function StreamChartView({ data, colors, height }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Area key={`${String(g)}-${i}`} type="monotone" dataKey={String(g)} stackId="a" stroke={colors[i % colors.length]} fill={`url(#streamG_${i})`} fillOpacity={1} />
         ))}

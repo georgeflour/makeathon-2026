@@ -56,7 +56,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.config import settings
 from app.query_engine import execute_query, normalize_data
-from app.vegalite_retriever import retrieve_vegalite_docs, is_built as vegalite_is_built
+from app.recharts_retriever import retrieve_recharts_docs, is_built as recharts_is_built
 
 # ---------------------------------------------------------------------------
 # Directory layout — everything lives in prompts/ next to this file
@@ -135,8 +135,8 @@ _CHART_HINT_MAP: dict[str, list[str]] = {
     "arc":          ["Donut Chart", "Pie Chart"],
     "sunburst":     ["Sunburst Diagram"],
     "radial":       ["Radial Bar Chart", "Radial Column Chart"],
-    "kpi":          [],   # single number — no chart docs needed
-    "none":         [],   # conversational/off-topic — no chart at all
+    "kpi":          [],
+    "none":         [],
     "scatter":      ["Scatterplot", "Bubble Chart"],
     "bubble":       ["Bubble Chart", "Scatterplot"],
     "heatmap":      ["Heatmap (Matrix)"],
@@ -494,15 +494,18 @@ def node_enhance_prompt(state: AgentState) -> dict:
 
     # RAG 2: retrieve relevant Vega-Lite spec docs from Supabase pgvector
     vegalite_docs = ""
-    if vegalite_is_built():
-        vegalite_docs = retrieve_vegalite_docs(
+    # REPLACE WITH
+    recharts_docs = ""
+    if recharts_is_built():
+        recharts_docs = retrieve_recharts_docs(
             query      = enhanced,
             chart_hint = chart_hint,
             k          = 5,
         )
-        print(f"[enhance_prompt] RAG vega-lite: {len(vegalite_docs)} chars")
+        print(f"[enhance_prompt] RAG recharts: {len(recharts_docs)} chars")
     else:
-        print("[enhance_prompt] RAG vega-lite: Supabase table empty or not built — skipping")
+        print("[enhance_prompt] RAG recharts: Supabase table empty or not built — skipping")
+    
 
     return {
         "enhanced_prompt": enhanced,
@@ -771,74 +774,101 @@ def node_assemble(state: AgentState) -> dict:
 
     raw_type = raw_type.lower().strip()
 
+    _CHART_HINT_MAP: dict[str, list[str]] = {
+        "bar":          ["Bar Chart", "Grouped Bar Chart", "Stacked Bar Chart", "Column Chart"],
+        "stacked_bar":  ["Stacked Bar Graph", "Bar Chart"],
+        "grouped_bar":  ["Grouped Bar Chart", "Bar Chart"],
+        "line":         ["Line Chart", "Multi-set Line Chart", "Slope Chart"],
+        "area":         ["Area Graph", "Stacked Area Graph"],
+        "stacked_area": ["Stacked Area Graph", "Area Graph"],
+        "pie":          ["Pie Chart", "Donut Chart"],
+        "donut":        ["Donut Chart", "Pie Chart"],
+        "arc":          ["Donut Chart", "Pie Chart"],
+        "sunburst":     ["Sunburst Diagram"],
+        "radial":       ["Radial Bar Chart", "Radial Column Chart"],
+        "kpi":          [],
+        "none":         [],
+        "scatter":      ["Scatterplot", "Bubble Chart"],
+        "bubble":       ["Bubble Chart", "Scatterplot"],
+        "heatmap":      ["Heatmap (Matrix)"],
+        "calendar":     ["Calendar"],
+        "boxplot":      ["Box and Whisker Plot"],
+        "violin":       ["Violin Plot"],
+        "errorbar":     ["Error Bars"],
+        "histogram":    ["Histogram"],
+        "density":      ["Density Plot"],
+        "radar":        ["Radar Chart"],
+        "candlestick":  ["Candlestick Chart"],
+        "span":         ["Span Chart"],
+        "tick":         ["Tally Chart", "Dot Plot"],
+        "wordcloud":    ["Word Cloud"],
+        "spiral":       ["Spiral Plot"],
+        "stream":       ["Stream Graph"],
+    }
+
     _TYPE_MAP = {
-        # arc / pie family
-        "pie":          "pie",
-        "donut":        "pie",
-        "arc":          "pie",
-        "sunburst":     "pie",
-        "radial":       "pie",
-        "radial_bar":   "pie",
+        # pie family
+        "pie":                "pie",
+        "donut":              "donut",
+        "arc":                "arc",
+        "sunburst":           "sunburst",
+        "radial":             "radial",
+        "radial_bar":         "radial",
+        "nightingale":        "radial",
         # bar family
-        "bar":          "bar",
-        "column":       "bar",
-        "histogram":    "bar",
-        "bullet":       "bar",
+        "bar":                "bar",
+        "column":             "bar",
+        "bullet":             "bar",
         "population_pyramid": "bar",
-        "tick":         "bar",
-        "tally":        "bar",
-        "timeline":     "bar",
-        "gantt":        "bar",
-        "wordcloud":    "bar",
+        "timeline":           "bar",
+        "gantt":              "bar",
+        # histogram
+        "histogram":          "histogram",
+        # tick / wordcloud / spiral
+        "tick":               "tick",
+        "tally":              "tick",
+        "wordcloud":          "wordcloud",
+        "text":               "wordcloud",
+        "spiral":             "spiral",
         # stacked / grouped
-        "stacked_bar":  "stacked_bar",
-        "grouped_bar":  "grouped_bar",
-        "multiset_bar": "grouped_bar",
-        # range
-        "span":         "span",
-        "range_bar":    "span",
+        "stacked_bar":        "stacked_bar",
+        "grouped_bar":        "grouped_bar",
+        "multiset_bar":       "grouped_bar",
+        # range / span
+        "span":               "span",
+        "range_bar":          "span",
         # line family
-        "line":         "line",
-        "slope":        "line",
-        "spiral":       "line",
-        "radar":        "line",
+        "line":               "line",
+        "slope":              "line",
         # area family
-        "area":         "area",
-        "stacked_area": "stacked_area",
-        "stream":       "area",
-        "density":      "area",
-        "violin":       "area",
-        # rect / heatmap family
-        "heatmap":      "heatmap",
-        "calendar":     "heatmap",
-        "rect":         "heatmap",
-        "timetable":    "heatmap",
+        "area":               "area",
+        "density":            "density",
+        "violin":             "violin",
+        "stacked_area":       "stacked_area",
+        "stream":             "stream",
+        # heatmap family
+        "heatmap":            "heatmap",
+        "calendar":           "heatmap",
+        "rect":               "heatmap",
+        "timetable":          "heatmap",
         # scatter / bubble
-        "scatter":      "scatter",
-        "bubble":       "bubble",
-        "dot":          "scatter",
-        "dot_matrix":   "scatter",
+        "scatter":            "scatter",
+        "bubble":             "bubble",
+        "dot":                "scatter",
+        "dot_matrix":         "scatter",
         # kpi
-        "kpi":          "kpi",
-        "text":         "kpi",      # single-value text mark
-        "wordcloud":    "bar",      # word + frequency → bar-like
-
+        "kpi":                "kpi",
         # statistical
-        "boxplot":      "boxplot",
-        "box":          "boxplot",
-        "errorbar":     "errorbar",
-        "error_bar":    "errorbar",
-
+        "boxplot":            "boxplot",
+        "box":                "boxplot",
+        "errorbar":           "errorbar",
+        "error_bar":          "errorbar",
+        # radar
+        "radar":              "radar",
         # financial
-        "candlestick":  "candlestick",
-        "ohlc":         "candlestick",
-        "rule_bar":     "candlestick",
-
-        # tick / tally / timeline
-        "tick":         "bar",
-        "tally":        "bar",
-        "timeline":     "bar",
-        "gantt":        "bar",
+        "candlestick":        "candlestick",
+        "ohlc":               "candlestick",
+        "rule_bar":           "candlestick",
     }
 
     chart_type = _TYPE_MAP.get(raw_type)

@@ -1,10 +1,10 @@
 """
-vegalite_retriever.py
+recharts_retriever.py
 =====================
 Runtime module — loaded by langgraph_agent.py.
-Queries the Supabase `vegalite_docs` table using pgvector cosine similarity.
+Queries the Supabase `recharts_docs` table using pgvector cosine similarity.
 
-The table must exist and be populated by build_vegalite_rag.py first.
+The table must exist and be populated by build_recharts_rag.py first.
 """
 
 from __future__ import annotations
@@ -19,20 +19,29 @@ from app.config import settings
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-TABLE_NAME      = "vegalite_docs"
-# Read from settings so it matches whatever you deployed in Azure.
-# Set AZURE_EMBEDDING_DEPLOYMENT_NAME in your .env file.
+TABLE_NAME      = "recharts_docs"
 EMBEDDING_MODEL = settings.AZURE_EMBEDDING_DEPLOYMENT_NAME or "text-embedding-3-small"
 
-# Per chart_hint — source paths to prioritise when re-ranking results
+# Per chart_hint — source path fragments to prioritise when re-ranking results.
+# These map to actual file paths inside the recharts/recharts repo.
 _HINT_PRIORITY_PATHS: dict[str, list[str]] = {
-    "bar":     ["/mark/bar.md",   "/encoding.md", "/aggregate.md"],
-    "line":    ["/mark/line.md",  "/encoding.md", "/temporal.md"],
-    "area":    ["/mark/area.md",  "/stack.md",    "/encoding.md"],
-    "pie":     ["/mark/arc.md",   "/encoding.md"],
-    "scatter": ["/mark/point.md", "/encoding.md", "/selection.md"],
-    "heatmap": ["/mark/rect.md",  "/encoding.md", "/scale.md"],
-    "kpi":     ["/mark/text.md",  "/aggregate.md"],
+    "bar":        ["BarChart", "Bar.tsx", "Bar.ts", "storybook/stories/Bar"],
+    "line":       ["LineChart", "Line.tsx", "Line.ts", "storybook/stories/Line"],
+    "area":       ["AreaChart", "Area.tsx", "Area.ts", "storybook/stories/Area"],
+    "pie":        ["PieChart", "Pie.tsx", "Pie.ts", "storybook/stories/Pie"],
+    "donut":      ["PieChart", "Pie.tsx", "storybook/stories/Pie"],
+    "scatter":    ["ScatterChart", "Scatter.tsx", "storybook/stories/Scatter"],
+    "heatmap":    ["CartesianGrid", "Cell.tsx", "storybook/stories/Scatter"],
+    "kpi":        ["Text.tsx", "Label.tsx"],
+    "stacked_bar":["BarChart", "Bar.tsx", "storybook/stories/Bar"],
+    "grouped_bar":["BarChart", "Bar.tsx", "storybook/stories/Bar"],
+    "stacked_area":["AreaChart", "Area.tsx", "storybook/stories/Area"],
+    "radar":      ["RadarChart", "Radar.tsx", "storybook/stories/Radar"],
+    "radial":     ["RadialBarChart", "RadialBar.tsx"],
+    "funnel":     ["FunnelChart", "Funnel.tsx"],
+    "errorbar":   ["ErrorBar.tsx", "ComposedChart"],
+    "boxplot":    ["ComposedChart", "ErrorBar.tsx"],
+    "composed":   ["ComposedChart"],
 }
 
 
@@ -47,9 +56,9 @@ def _sb() -> Client:
 @lru_cache(maxsize=1)
 def _oai() -> AzureOpenAI:
     return AzureOpenAI(
-        azure_endpoint = settings.AZURE_OPENAI_ENDPOINT,
-        api_key        = settings.AZURE_OPENAI_API_KEY,
-        api_version    = "2024-02-15-preview",
+        azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
+        api_key=settings.AZURE_OPENAI_API_KEY,
+        api_version="2024-02-15-preview",
     )
 
 
@@ -61,7 +70,7 @@ def _embed(text: str) -> list[float]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-def retrieve_vegalite_docs(
+def retrieve_recharts_docs(
     query:      str,
     chart_hint: str = "bar",
     k:          int = 5,
@@ -76,13 +85,12 @@ def retrieve_vegalite_docs(
     try:
         query_embedding = _embed(query)
     except Exception as e:
-        print(f"[vegalite_retriever] Embedding failed: {e}")
+        print(f"[recharts_retriever] Embedding failed: {e}")
         return ""
 
     try:
-        # Supabase RPC — calls the match_vegalite_docs SQL function (see below)
         result = _sb().rpc(
-            "match_vegalite_docs",
+            "match_recharts_docs",
             {
                 "query_embedding": query_embedding,
                 "match_count":     k_fetch,
@@ -90,7 +98,7 @@ def retrieve_vegalite_docs(
         ).execute()
         rows = result.data or []
     except Exception as e:
-        print(f"[vegalite_retriever] Supabase query failed: {e}")
+        print(f"[recharts_retriever] Supabase query failed: {e}")
         return ""
 
     if not rows:
@@ -117,7 +125,7 @@ def retrieve_vegalite_docs(
 
 
 def is_built() -> bool:
-    """Return True if the vegalite_docs table exists and has rows."""
+    """Return True if the recharts_docs table exists and has rows."""
     try:
         result = _sb().table(TABLE_NAME).select("id").limit(1).execute()
         return bool(result.data)

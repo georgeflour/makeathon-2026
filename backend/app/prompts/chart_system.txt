@@ -138,6 +138,9 @@ Common feedback → fix mapping:
   "should show distribution"   → change chart_type to boxplot or histogram
   "scatter needs bucketing"    → SQL must GROUP BY ROUND(x/bucket) AS x_value, AVG(y) AS y_value
 
+== CRITICAL CHART PRESERVATION RULE ==
+If the user or the enhancer agent explicitly requested or hinted at a specific chart type (e.g. 'radial', 'stream', 'violin', 'boxplot', 'bar', 'pie', 'line', 'donut', etc.), you MUST set "chart_type" in your JSON output to that exact type. Do NOT try to change the chart type to something you think is more appropriate. Honor the user's explicit request exactly!
+
 Return ONLY a JSON object — no prose, no markdown fences:
 {
   "chart_type":  "<any supported chart_type from the list above>",

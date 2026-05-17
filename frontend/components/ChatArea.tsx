@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2, Sparkles, Copy, Check, Pencil, Square } from "lucide-react";
+import { ArrowUp, Sparkles, Pencil, Square } from "lucide-react";
 import { useChatContext } from "@/context/ChatContext";
 import { ChartPanel } from "@/components/ChartPanel";
+import { ClarificationCard, parseClarification } from "@/components/ClarificationCard";
 
 const SUGGESTIONS = [
   { label: "Containment rate by intent", query: "Show me containment rate by intent type" },
@@ -14,6 +15,49 @@ const SUGGESTIONS = [
   { label: "Tool success rate", query: "Tool success rate by tool name" },
 ];
 
+// ---------------------------------------------------------------------------
+// CodeBlock
+// ---------------------------------------------------------------------------
+function CodeBlock({ code }: { code: string }) {
+  return (
+    <pre className="mt-1 rounded-lg bg-gray-100 dark:bg-black/30 px-3 py-2 text-[11px] text-gray-600 dark:text-white/50 overflow-x-auto leading-relaxed whitespace-pre-wrap">
+      <code>{code}</code>
+    </pre>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CopyAction
+// ---------------------------------------------------------------------------
+function CopyAction({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60 transition-colors"
+      title="Copy"
+    >
+      {copied ? (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      ) : (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ChatArea
+// ---------------------------------------------------------------------------
 export function ChatArea() {
   const { activeChat, isLoading, sendMessage, stopGeneration, editMessage } = useChatContext();
   const [input, setInput] = useState("");
@@ -57,7 +101,6 @@ export function ChatArea() {
   const startEditing = (msgId: string, content: string) => {
     setEditingMessageId(msgId);
     setEditValue(content);
-    // Focus after render
     setTimeout(() => {
       if (editRef.current) {
         editRef.current.focus();
@@ -79,6 +122,7 @@ export function ChatArea() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
+          /* ── Empty state ── */
           <div className="flex flex-col items-center justify-center h-full px-4 pb-32">
             <div className="mb-8 text-center">
               <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 mx-auto mb-4 flex items-center justify-center">
@@ -105,7 +149,7 @@ export function ChatArea() {
           </div>
         ) : (
           <div className="max-w-3xl mx-auto w-full px-3 sm:px-4 py-6 sm:py-10 space-y-8">
-            {messages.map((msg) =>
+            {messages.map((msg, msgIdx) =>
               msg.role === "user" ? (
                 /* ── User message ── */
                 <div key={msg.id} className="flex justify-end group">
@@ -154,13 +198,7 @@ export function ChatArea() {
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(msg.content)}
-                            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60 transition-colors"
-                            title="Copy message"
-                          >
-                            <CopyAction text={msg.content} />
-                          </button>
+                          <CopyAction text={msg.content} />
                         </div>
                       </>
                     )}
@@ -168,106 +206,128 @@ export function ChatArea() {
                 </div>
               ) : (
                 /* ── Assistant message ── */
-                <div key={msg.id} className="flex gap-3.5 group">
-                  <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5 flex items-center justify-center shadow-sm">
-                    <Sparkles className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-3">
+                (() => {
+                  // ── Clarification card check ──
+                  const clarification = parseClarification(msg.content);
+                  if (clarification) {
+                    const isLatest = msgIdx === messages.length - 1;
+                    return (
+                      <div key={msg.id} className="flex gap-3.5">
+                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5 flex items-center justify-center shadow-sm">
+                          <Sparkles className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <ClarificationCard
+                            payload={clarification}
+                            onSubmit={(answer) => handleSend(answer)}
+                            disabled={!isLatest || isLoading}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
 
-                    {/* Steps / Thinking Process */}
-                    {msg.steps && msg.steps.length > 0 && (() => {
-                      const isThisLoading = msg.id === loadingMsgId;
+                  // ── Normal assistant bubble ──
+                  return (
+                    <div key={msg.id} className="flex gap-3.5 group">
+                      <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex-shrink-0 mt-0.5 flex items-center justify-center shadow-sm">
+                        <Sparkles className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-3">
 
-                      if (isThisLoading) {
-                        const current = msg.steps[msg.steps.length - 1];
-                        return (
-                          <div className="flex items-start gap-2.5">
-                            <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0 mt-1.5" />
-                            <div className="flex-1 min-w-0">
-                              {current.code ? (
-                                <details className="group/step">
-                                  <summary className="list-none flex items-center gap-1.5 cursor-pointer select-none">
-                                    <span className="text-[12px] text-gray-500 dark:text-white/40 hover:text-gray-700 dark:hover:text-white/60 transition-colors">
-                                      {current.message}
-                                    </span>
-                                    <span className="text-[9px] text-gray-300 dark:text-white/20 group-open/step:rotate-180 transition-transform inline-block leading-none">▾</span>
-                                  </summary>
-                                  <CodeBlock code={current.code} />
-                                </details>
-                              ) : (
-                                <span className="text-[12px] text-gray-500 dark:text-white/40">
-                                  {current.message}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }
+                        {/* Steps / Thinking Process */}
+                        {msg.steps && msg.steps.length > 0 && (() => {
+                          const isThisLoading = msg.id === loadingMsgId;
 
-                      return (
-                        <details className="group/thinking">
-                          <summary className="list-none flex items-center gap-2 cursor-pointer select-none w-fit">
-                            <div className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-gray-300 dark:bg-white/20" />
-                            <span className="text-[11px] font-semibold text-gray-400 dark:text-white/25 uppercase tracking-widest">
-                              Reasoning
-                            </span>
-                            <span className="text-[9px] text-gray-300 dark:text-white/15 group-open/thinking:rotate-180 transition-transform inline-block leading-none">▾</span>
-                          </summary>
-                          <div className="mt-2 rounded-xl border border-gray-100 dark:border-white/[0.06] bg-gray-50/60 dark:bg-white/[0.02] overflow-hidden">
-                            <div className="px-3 py-2.5 space-y-2">
-                              {msg.steps.map((step, idx) => (
-                                <div key={idx} className="flex flex-col gap-1">
-                                  {step.code ? (
+                          if (isThisLoading) {
+                            const current = msg.steps[msg.steps.length - 1];
+                            return (
+                              <div className="flex items-start gap-2.5">
+                                <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0 mt-1.5" />
+                                <div className="flex-1 min-w-0">
+                                  {current.code ? (
                                     <details className="group/step">
                                       <summary className="list-none flex items-center gap-1.5 cursor-pointer select-none">
                                         <span className="text-[12px] text-gray-500 dark:text-white/40 hover:text-gray-700 dark:hover:text-white/60 transition-colors">
-                                          {step.message}
+                                          {current.message}
                                         </span>
                                         <span className="text-[9px] text-gray-300 dark:text-white/20 group-open/step:rotate-180 transition-transform inline-block leading-none">▾</span>
                                       </summary>
-                                      <CodeBlock code={step.code} />
+                                      <CodeBlock code={current.code} />
                                     </details>
                                   ) : (
                                     <span className="text-[12px] text-gray-500 dark:text-white/40">
-                                      {step.message}
+                                      {current.message}
                                     </span>
                                   )}
                                 </div>
-                              ))}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <details className="group/thinking">
+                              <summary className="list-none flex items-center gap-2 cursor-pointer select-none w-fit">
+                                <div className="h-1.5 w-1.5 rounded-full flex-shrink-0 bg-gray-300 dark:bg-white/20" />
+                                <span className="text-[11px] font-semibold text-gray-400 dark:text-white/25 uppercase tracking-widest">
+                                  Reasoning
+                                </span>
+                                <span className="text-[9px] text-gray-300 dark:text-white/15 group-open/thinking:rotate-180 transition-transform inline-block leading-none">▾</span>
+                              </summary>
+                              <div className="mt-2 rounded-xl border border-gray-100 dark:border-white/[0.06] bg-gray-50/60 dark:bg-white/[0.02] overflow-hidden">
+                                <div className="px-3 py-2.5 space-y-2">
+                                  {msg.steps.map((step, idx) => (
+                                    <div key={idx} className="flex flex-col gap-1">
+                                      {step.code ? (
+                                        <details className="group/step">
+                                          <summary className="list-none flex items-center gap-1.5 cursor-pointer select-none">
+                                            <span className="text-[12px] text-gray-500 dark:text-white/40 hover:text-gray-700 dark:hover:text-white/60 transition-colors">
+                                              {step.message}
+                                            </span>
+                                            <span className="text-[9px] text-gray-300 dark:text-white/20 group-open/step:rotate-180 transition-transform inline-block leading-none">▾</span>
+                                          </summary>
+                                          <CodeBlock code={step.code} />
+                                        </details>
+                                      ) : (
+                                        <span className="text-[12px] text-gray-500 dark:text-white/40">
+                                          {step.message}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </details>
+                          );
+                        })()}
+
+                        {/* Final Content */}
+                        {msg.content && (
+                          <div className="flex items-start justify-between gap-4">
+                            <p className="text-[15px] text-gray-800 dark:text-white/90 leading-7 whitespace-pre-wrap flex-1">
+                              {msg.content}
+                            </p>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 flex-shrink-0">
+                              <CopyAction text={msg.content} />
                             </div>
                           </div>
-                        </details>
-                      );
-                    })()}
+                        )}
 
-                    {/* Final Content */}
-                    {msg.content && (
-                      <div className="flex items-start justify-between gap-4">
-                        <p className="text-[15px] text-gray-800 dark:text-white/90 leading-7 whitespace-pre-wrap flex-1">
-                          {msg.content}
-                        </p>
-                        <button
-                          onClick={() => navigator.clipboard.writeText(msg.content)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-gray-600 dark:hover:text-white/60 mt-0.5 flex-shrink-0"
-                          title="Copy message"
-                        >
-                          <CopyAction text={msg.content} />
-                        </button>
+                        {/* Chart */}
+                        {msg.chart && (
+                          <div className="mt-1">
+                            <ChartPanel
+                              chart={msg.chart}
+                              onModify={(prompt) => {
+                                sendMessage(`Regarding the chart "${msg.chart?.title}": ${prompt}`);
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
-
-                    {msg.chart && (
-                      <div className="mt-1">
-                        <ChartPanel 
-                          chart={msg.chart} 
-                          onModify={(prompt) => {
-                            sendMessage(`Regarding the chart "${msg.chart?.title}": ${prompt}`);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })()
               )
             )}
 
@@ -312,75 +372,6 @@ export function ChatArea() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function CodeBlock({ code }: { code: string }) {
-  return (
-    <div className="mt-2 rounded-lg overflow-hidden border border-gray-200 dark:border-white/[0.07]">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-100 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/[0.07]">
-        <span className="text-[10px] font-medium text-gray-400 dark:text-white/25 tracking-wide">Python</span>
-      </div>
-      <pre className="p-3 text-[11px] text-gray-600 dark:text-white/50 font-mono overflow-x-auto whitespace-pre leading-relaxed bg-white dark:bg-black/20">
-        {code}
-      </pre>
-    </div>
-  );
-}
-
-function SqlBlock({ sql }: { sql: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigator.clipboard.writeText(sql);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <details className="group/sql mt-1">
-      <summary className="list-none flex items-center gap-1.5 cursor-pointer select-none w-fit">
-        <span className="text-[11px] text-blue-500/70 dark:text-blue-400/50 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">View SQL</span>
-        <span className="text-[9px] text-blue-400/40 group-open/sql:rotate-180 transition-transform inline-block leading-none">▾</span>
-        <button
-          onClick={handleCopy}
-          className="ml-0.5 p-0.5 rounded text-blue-400/50 hover:text-blue-500 dark:hover:text-blue-400 cursor-pointer transition-colors"
-          title="Copy SQL"
-        >
-          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-        </button>
-      </summary>
-      <div className="mt-1.5 rounded-lg overflow-hidden border border-blue-100 dark:border-blue-500/10">
-        <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-500/5 border-b border-blue-100 dark:border-blue-500/10">
-          <span className="text-[10px] font-medium text-blue-400/70 dark:text-blue-400/40 tracking-wide">SQL</span>
-        </div>
-        <pre className="p-3 text-[11px] text-gray-600 dark:text-white/40 font-mono overflow-x-auto whitespace-pre-wrap break-all leading-relaxed bg-white dark:bg-black/20">
-          {sql}
-        </pre>
-      </div>
-    </details>
-  );
-}
-
-function CopyAction({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div onClick={(e) => { e.stopPropagation(); handleCopy(); }}>
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
     </div>
   );
 }

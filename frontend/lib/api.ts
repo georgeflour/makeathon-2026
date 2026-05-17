@@ -90,3 +90,74 @@ export async function getHealth() {
   if (!res.ok) throw new Error("Failed to get health status");
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Scheduled reports
+// ---------------------------------------------------------------------------
+
+export interface ScheduledReport {
+  id: string;
+  name: string;
+  widget_ids: string[];
+  frequency: "daily" | "weekly";
+  day_of_week?: number | null;  // 0=Mon … 6=Sun
+  hour: number;
+  email: string;
+  enabled: boolean;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  created_at?: string;
+}
+
+async function _schedulerFetch(
+  path: string,
+  token: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  return fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers ?? {}),
+    },
+  });
+}
+
+export async function getSchedules(token: string): Promise<ScheduledReport[]> {
+  const res = await _schedulerFetch("/api/schedules", token);
+  if (!res.ok) throw new Error("Failed to fetch schedules");
+  return res.json();
+}
+
+export async function createSchedule(
+  token: string,
+  data: Omit<ScheduledReport, "id" | "enabled" | "next_run_at" | "last_run_at" | "created_at">
+): Promise<ScheduledReport> {
+  const res = await _schedulerFetch("/api/schedules", token, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create schedule");
+  return res.json();
+}
+
+export async function toggleSchedule(
+  token: string,
+  id: string,
+  enabled: boolean
+): Promise<ScheduledReport> {
+  const res = await _schedulerFetch(`/api/schedules/${id}`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error("Failed to update schedule");
+  return res.json();
+}
+
+export async function deleteSchedule(token: string, id: string): Promise<void> {
+  const res = await _schedulerFetch(`/api/schedules/${id}`, token, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete schedule");
+}

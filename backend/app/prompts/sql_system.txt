@@ -104,7 +104,7 @@ Use ONLY these five flat tables with the exact columns listed below.
 - heatmap          : return exactly 3 columns — row_label TEXT, col_label TEXT, value NUMERIC.
 - scatter : return exactly 2 numeric columns aliased AS x_value (first) and y_value (second).
             Always GROUP BY a bucketed version of x (e.g. ROUND(x/30.0)*30 AS x_value)
-            and aggregate y (AVG). Use LIMIT 200. No ORDER BY.
+            and aggregate y (AVG). Use LIMIT 200. Always ORDER BY x_value ASC.
             Example for AHT vs CSAT:
             SELECT ROUND(call_duration_secs / 30.0) * 30 AS x_value,
                    AVG(csat_score)                       AS y_value
@@ -113,11 +113,36 @@ Use ONLY these five flat tables with the exact columns listed below.
             GROUP BY 1
             ORDER BY 1
             LIMIT 200;
+- bubble  : return exactly 3 numeric columns aliased AS x_value, y_value, size_value.
+            Always GROUP BY bucketed x and y, aggregate size (e.g. COUNT(*) or AVG). Limit 200.
+            Example for AHT vs CSAT vs Volume:
+            SELECT ROUND(call_duration_secs / 30.0) * 30 AS x_value,
+                   ROUND(csat_score)                     AS y_value,
+                   COUNT(*)                              AS size_value
+            FROM conversations
+            WHERE csat_score IS NOT NULL
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+            LIMIT 200;
 - Limit bar/pie to 20 rows max: ORDER BY value DESC LIMIT 20.
 - For line charts  : ORDER BY date/time ASC.
 - Always ALIAS computed columns: COUNT(*) AS call_volume, AVG(...) AS containment_rate, etc.
-- When joining turns for intent: use a subquery with DISTINCT conversation_id to avoid row duplication.
-- Rates/percentages: decimals 0–1 ONLY. NEVER multiply by 100. Frontend handles display formatting.
+- CRITICAL JOIN RULE FOR INTENTS: Since a conversation has many turns, joining conversations directly to turns will duplicate/inflate conversation counts, metrics, and averages!
+  To aggregate conversation metrics (like CSAT, containment, call duration) broken down by intent:
+  ALWAYS join using a subquery that extracts exactly ONE intent per conversation (filtering role='user' and detected_intent IS NOT NULL).
+  Correct Example (Containment rate by intent):
+  SELECT t.detected_intent AS label,
+         AVG(CASE WHEN c.call_successful='success' THEN 1.0 ELSE 0.0 END) AS value
+  FROM conversations c
+  JOIN (
+      SELECT DISTINCT ON (conversation_id) conversation_id, detected_intent
+      FROM turns
+      WHERE role = 'user' AND detected_intent IS NOT NULL
+      ORDER BY conversation_id, turn_number ASC
+  ) t ON c.conversation_id = t.conversation_id
+  GROUP BY 1
+  ORDER BY 2 DESC;
+- Rates/percentages: decimals 0–1 ONLY. NEVER multiply by 100. Frontend formats them as percentages.
 - For daily queries: use start_date. Do NOT cast start_time.
 - For segment: use conversations.segment directly. Do NOT join data_collection for segment.
 - For criterion pass rates: exclude result='unknown'. Use:

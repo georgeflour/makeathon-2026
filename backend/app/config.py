@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str = ""
     AZURE_OPENAI_ENDPOINT: str = "https://makeathon-ai-foundry.cognitiveservices.azure.com/"
 
+    # Email (scheduled report emails) — uses Resend API
+    RESEND_API_KEY: str = ""
+    REPORT_FROM_EMAIL: str = "reports@makeathon-2026.com"
+
     # Supabase direct DB connection (for SQL queries)
     SUPABASE_DB_URL: str = ""
 

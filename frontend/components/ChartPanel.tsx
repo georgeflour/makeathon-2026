@@ -119,6 +119,7 @@ interface ChartProps {
   above: string;
   below: string;
   color_rules?: ChartSpec["color_rules"];
+  height?: number;
 }
 
 interface Props {
@@ -149,9 +150,9 @@ function KpiCard({ data, color_rules, primary, above, below }: ChartProps) {
   );
 }
 
-function PieChartContainer({ data, colors, innerRadius }: { data: LabelValue[]; colors: string[]; innerRadius: number }) {
+function PieChartContainer({ data, colors, innerRadius, height }: { data: LabelValue[]; colors: string[]; innerRadius: number; height?: number }) {
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={height ?? 280}>
       <PieChart>
         <Pie
           data={data}
@@ -175,7 +176,7 @@ function PieChartContainer({ data, colors, innerRadius }: { data: LabelValue[]; 
   );
 }
 
-function StackedBarChart({ data, colors }: ChartProps) {
+function StackedBarChart({ data, colors, height }: ChartProps) {
   const rows = data as GroupedRow[];
   const labels = [...new Set(rows.map((d) => d.label))];
   const groups = [...new Set(rows.map((d) => d.group))];
@@ -188,13 +189,13 @@ function StackedBarChart({ data, colors }: ChartProps) {
     return row;
   });
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={height ?? 280}>
       <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Bar key={`${String(g)}-${i}`} dataKey={String(g)} stackId="a" fill={colors[i % colors.length]} radius={i === groups.length - 1 ? [3, 3, 0, 0] : undefined} />
         ))}
@@ -203,7 +204,7 @@ function StackedBarChart({ data, colors }: ChartProps) {
   );
 }
 
-function GroupedBarChart({ data, colors }: ChartProps) {
+function GroupedBarChart({ data, colors, height }: ChartProps) {
   const rows = data as GroupedRow[];
   const labels = [...new Set(rows.map((d) => d.label))];
   const groups = [...new Set(rows.map((d) => d.group))];
@@ -216,13 +217,13 @@ function GroupedBarChart({ data, colors }: ChartProps) {
     return row;
   });
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={height ?? 280}>
       <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Bar key={`${String(g)}-${i}`} dataKey={String(g)} fill={colors[i % colors.length]} radius={[3, 3, 0, 0]} />
         ))}
@@ -231,7 +232,7 @@ function GroupedBarChart({ data, colors }: ChartProps) {
   );
 }
 
-function StackedAreaChartView({ data, colors }: ChartProps) {
+function StackedAreaChartView({ data, colors, height }: ChartProps) {
   const rows = data as GroupedRow[];
   const labels = [...new Set(rows.map((d) => d.label))];
   const groups = [...new Set(rows.map((d) => d.group))];
@@ -244,8 +245,8 @@ function StackedAreaChartView({ data, colors }: ChartProps) {
     return row;
   });
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
+      <ComposedChart data={pivoted} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <defs>
           {groups.map((g, i) => (
             <linearGradient key={`grad-${String(g)}-${i}`} id={`areaG_${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -258,7 +259,7 @@ function StackedAreaChartView({ data, colors }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Area key={`${String(g)}-${i}`} type="monotone" dataKey={String(g)} stackId="a" stroke={colors[i % colors.length]} fill={`url(#areaG_${i})`} fillOpacity={1} />
         ))}
@@ -267,11 +268,11 @@ function StackedAreaChartView({ data, colors }: ChartProps) {
   );
 }
 
-function RadarChartView({ data, primary }: ChartProps) {
+function RadarChartView({ data, primary, height }: ChartProps) {
   const rows = data as LabelValue[];
   const isRate = rows.length > 0 && rows.every((d) => d.value >= 0 && d.value <= 1);
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={height ?? 300}>
       <RadarChart data={rows} margin={{ top: 8, right: 32, left: 32, bottom: 8 }}>
         <PolarGrid stroke="hsl(var(--border))" />
         <PolarAngleAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} tickFormatter={formatLabel} />
@@ -289,12 +290,12 @@ function RadarChartView({ data, primary }: ChartProps) {
   );
 }
 
-function ScatterView({ data, primary }: ChartProps) {
+function ScatterView({ data, primary, height }: ChartProps) {
   const rows: ScatterRow[] = Array.isArray(data)
     ? (data as any[]).map((d) => ({ x: Number(d.x ?? 0), y: Number(d.y ?? 0) }))
     : [];
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
       <ScatterChart margin={{ top: 4, right: 16, left: 0, bottom: 20 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="x" type="number" name="x" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
@@ -306,12 +307,12 @@ function ScatterView({ data, primary }: ChartProps) {
   );
 }
 
-function BubbleView({ data, primary }: ChartProps) {
+function BubbleView({ data, primary, height }: ChartProps) {
   const rows: ScatterRow[] = Array.isArray(data)
     ? (data as any[]).map((d) => ({ x: Number(d.x ?? 0), y: Number(d.y ?? 0), size: Number(d.size ?? 10) }))
     : [];
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={height ?? 280}>
       <ScatterChart margin={{ top: 4, right: 16, left: 0, bottom: 20 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="x" type="number" tick={{ fontSize: 11 }} tickFormatter={formatValue} />
@@ -324,7 +325,7 @@ function BubbleView({ data, primary }: ChartProps) {
   );
 }
 
-function HeatmapChart({ data, primary }: ChartProps) {
+function HeatmapChart({ data, primary, height }: ChartProps) {
   const rows_data = data as HeatmapRow[];
   if (!rows_data.length) return null;
   const rows = [...new Set(rows_data.map((d) => d.row))];
@@ -336,7 +337,7 @@ function HeatmapChart({ data, primary }: ChartProps) {
   const CELL_H = 32;
   const LEFT_PAD = 120; const TOP_PAD = 40;
   const svgW = LEFT_PAD + cols.length * CELL_W + 8;
-  const svgH = TOP_PAD + rows.length * CELL_H + 8;
+  const svgH = height ?? (TOP_PAD + rows.length * CELL_H + 8);
   const opacity = (v: number) => max === min ? 0.7 : 0.1 + 0.85 * ((v - min) / (max - min));
   return (
     <div className="overflow-x-auto">
@@ -370,14 +371,14 @@ function HeatmapChart({ data, primary }: ChartProps) {
   );
 }
 
-function BoxplotChart({ data, colors }: ChartProps) {
+function BoxplotChart({ data, colors, height }: ChartProps) {
   const rows = data as BoxplotRow[];
   if (!rows.length) return null;
   const allVals = rows.flatMap((d) => [d.min, d.max]);
   const globalMin = Math.min(...allVals);
   const globalMax = Math.max(...allVals);
   const range = globalMax - globalMin || 1;
-  const HEIGHT = 220; const PAD_TOP = 20; const PAD_BOTTOM = 50;
+  const HEIGHT = height ?? 220; const PAD_TOP = 20; const PAD_BOTTOM = 50;
   const plotH = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const toY = (v: number) => PAD_TOP + plotH - ((v - globalMin) / range) * plotH;
   const itemW = Math.max(40, Math.min(90, Math.floor(540 / rows.length)));
@@ -415,14 +416,14 @@ function BoxplotChart({ data, colors }: ChartProps) {
   );
 }
 
-function ErrorBarChartView({ data, primary }: ChartProps) {
+function ErrorBarChartView({ data, primary, height }: ChartProps) {
   const rows = (data as ErrorbarRow[]).map((d) => ({
     label: d.label,
     value: d.value,
     errorY: [d.value - d.lower, d.upper - d.value] as [number, number],
   }));
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
       <ComposedChart data={rows} margin={{ top: 8, right: 16, left: 0, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} tickFormatter={formatLabel} />
@@ -436,14 +437,14 @@ function ErrorBarChartView({ data, primary }: ChartProps) {
   );
 }
 
-function CandlestickChart({ data, above, below }: ChartProps) {
+function CandlestickChart({ data, above, below, height }: ChartProps) {
   const rows = data as CandleRow[];
   if (!rows.length) return null;
   const allVals = rows.flatMap((d) => [d.low, d.high]);
   const globalMin = Math.min(...allVals);
   const globalMax = Math.max(...allVals);
   const range = globalMax - globalMin || 1;
-  const HEIGHT = 240; const PAD_TOP = 16; const PAD_BOTTOM = 44;
+  const HEIGHT = height ?? 240; const PAD_TOP = 16; const PAD_BOTTOM = 44;
   const plotH = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const toY = (v: number) => PAD_TOP + plotH - ((v - globalMin) / range) * plotH;
   const itemW = Math.max(20, Math.min(60, Math.floor(560 / rows.length)));
@@ -480,7 +481,7 @@ function CandlestickChart({ data, above, below }: ChartProps) {
   );
 }
 
-function SpanChart({ data, colors }: ChartProps) {
+function SpanChart({ data, colors, height }: ChartProps) {
   const rows = data as SpanRow[];
   if (!rows.length) return null;
   const allVals = rows.flatMap((d) => [d.min, d.max]);
@@ -490,7 +491,7 @@ function SpanChart({ data, colors }: ChartProps) {
   const BAR_H = 22; const GAP = 8; const LEFT_PAD = 130; const RIGHT_PAD = 60;
   const TOP_PAD = 24; const PLOT_W = 400;
   const svgW = LEFT_PAD + PLOT_W + RIGHT_PAD;
-  const svgH = TOP_PAD + rows.length * (BAR_H + GAP) + 8;
+  const svgH = height ?? (TOP_PAD + rows.length * (BAR_H + GAP) + 8);
   const toX = (v: number) => LEFT_PAD + ((v - globalMin) / range) * PLOT_W;
   return (
     <div className="overflow-x-auto">
@@ -520,12 +521,12 @@ function SpanChart({ data, colors }: ChartProps) {
   );
 }
 
-function TickChart({ data, colors }: ChartProps) {
+function TickChart({ data, colors, height }: ChartProps) {
   const rows = data as LabelValue[];
   const vals = rows.map((d) => d.value);
   const minV = Math.min(...vals); const maxV = Math.max(...vals);
   const range = maxV - minV || 1;
-  const HEIGHT = 100; const LEFT_PAD = 8; const W = 560;
+  const HEIGHT = height ?? 100; const LEFT_PAD = 8; const W = 560;
   const toX = (v: number) => LEFT_PAD + ((v - minV) / range) * W;
   return (
     <div className="overflow-x-auto">
@@ -550,7 +551,7 @@ function TickChart({ data, colors }: ChartProps) {
   );
 }
 
-function WordCloud({ data, colors }: ChartProps) {
+function WordCloud({ data, colors, height }: ChartProps) {
   const rows = data as LabelValue[];
   if (!rows.length) return null;
   const sorted = [...rows].sort((a, b) => b.value - a.value).slice(0, 40);
@@ -569,10 +570,10 @@ function WordCloud({ data, colors }: ChartProps) {
   );
 }
 
-function FunnelChartView({ data, colors }: ChartProps) {
+function FunnelChartView({ data, colors, height }: ChartProps) {
   const rows = (data as LabelValue[]).map((d, i) => ({ ...d, fill: colors[i % colors.length] }));
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={height ?? 300}>
       <FunnelChart>
         <Tooltip formatter={(v) => formatValue(Number(v))} />
         <Funnel dataKey="value" data={rows} isAnimationActive>
@@ -583,7 +584,7 @@ function FunnelChartView({ data, colors }: ChartProps) {
   );
 }
 
-function RadialBarChartContainer({ data, colors }: { data: LabelValue[]; colors: string[] }) {
+function RadialBarChartContainer({ data, colors, height }: { data: LabelValue[]; colors: string[]; height?: number }) {
   const formatted = data.map((d, i) => ({
     name: formatLabel(d.label),
     value: d.value,
@@ -591,7 +592,7 @@ function RadialBarChartContainer({ data, colors }: { data: LabelValue[]; colors:
   }));
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
+    <ResponsiveContainer width="100%" height={height ?? 280}>
       <RadialBarChart 
         cx="50%" 
         cy="50%" 
@@ -601,10 +602,8 @@ function RadialBarChartContainer({ data, colors }: { data: LabelValue[]; colors:
         data={formatted}
       >
         <RadialBar
-          minAngle={15}
           label={{ position: 'insideStart', fill: '#fff', fontSize: 10 }}
           background
-          clockWise
           dataKey="value"
         />
         <Legend iconSize={10} layout="vertical" verticalAlign="middle" align="right" />
@@ -614,7 +613,7 @@ function RadialBarChartContainer({ data, colors }: { data: LabelValue[]; colors:
   );
 }
 
-function StreamChartView({ data, colors }: ChartProps) {
+function StreamChartView({ data, colors, height }: ChartProps) {
   const rows = data as GroupedRow[];
   const labels = [...new Set(rows.map((d) => d.label))];
   const groups = [...new Set(rows.map((d) => d.group))];
@@ -627,8 +626,8 @@ function StreamChartView({ data, colors }: ChartProps) {
     return row;
   });
   return (
-    <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={pivoted} stackOffset="silhouette" margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
+      <ComposedChart data={pivoted} stackOffset="silhouette" margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
         <defs>
           {groups.map((g, i) => (
             <linearGradient key={`grad-stream-${String(g)}-${i}`} id={`streamG_${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -641,7 +640,7 @@ function StreamChartView({ data, colors }: ChartProps) {
         <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval="preserveStartEnd" tickFormatter={formatLabel} />
         <YAxis tick={{ fontSize: 11 }} tickFormatter={formatValue} />
         <Tooltip formatter={(v) => formatValue(Number(v))} labelFormatter={formatLabel} />
-        <Legend />
+        <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
         {groups.map((g, i) => (
           <Area key={`${String(g)}-${i}`} type="monotone" dataKey={String(g)} stackId="a" stroke={colors[i % colors.length]} fill={`url(#streamG_${i})`} fillOpacity={1} />
         ))}
@@ -650,10 +649,10 @@ function StreamChartView({ data, colors }: ChartProps) {
   );
 }
 
-function ViolinChartView({ data, colors, primary }: ChartProps) {
+function ViolinChartView({ data, colors, primary, height }: ChartProps) {
   const rows = data as LabelValue[];
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
       <ComposedChart data={rows} margin={{ top: 8, right: 16, left: 16, bottom: 20 }}>
         <defs>
           <linearGradient id="violinGrad" x1="0" y1="0" x2="0" y2="1">
@@ -671,10 +670,10 @@ function ViolinChartView({ data, colors, primary }: ChartProps) {
   );
 }
 
-function DensityChartView({ data, primary }: ChartProps) {
+function DensityChartView({ data, primary, height }: ChartProps) {
   const rows = data as LabelValue[];
   return (
-    <ResponsiveContainer width="100%" height={260}>
+    <ResponsiveContainer width="100%" height={height ?? 260}>
       <ComposedChart data={rows} margin={{ top: 8, right: 16, left: 16, bottom: 20 }}>
         <defs>
           <linearGradient id="densityGrad" x1="0" y1="0" x2="0" y2="1">
@@ -700,12 +699,12 @@ type RegistryFn = (props: ChartProps) => JSX.Element | null;
 
 const CHART_REGISTRY: Record<string, RegistryFn> = {
   kpi: (p) => <KpiCard {...p} />,
-  pie: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={0} />,
-  donut: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={60} />,
-  arc: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={60} />,
-  sunburst: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={30} />,
-  radial: (p) => <RadialBarChartContainer data={p.data} colors={p.colors} />,
-  nightingale: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={0} />,
+  pie: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={0} height={p.height} />,
+  donut: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={60} height={p.height} />,
+  arc: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={60} height={p.height} />,
+  sunburst: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={30} height={p.height} />,
+  radial: (p) => <RadialBarChartContainer data={p.data} colors={p.colors} height={p.height} />,
+  nightingale: (p) => <PieChartContainer data={p.data} colors={p.colors} innerRadius={0} height={p.height} />,
   stacked_bar: (p) => <StackedBarChart {...p} />,
   grouped_bar: (p) => <GroupedBarChart {...p} />,
   stacked_area: (p) => <StackedAreaChartView {...p} />,
@@ -731,7 +730,7 @@ const CHART_REGISTRY: Record<string, RegistryFn> = {
   tally: (p) => <TickChart {...p} />,
   text: (p) => <WordCloud {...p} />,
   multiset_bar: (p) => <GroupedBarChart {...p} />,
-  spiral: (p) => <RadialBarChartContainer data={p.data} colors={p.colors} />,
+  spiral: (p) => <RadialBarChartContainer data={p.data} colors={p.colors} height={p.height} />,
   violin: (p) => <ViolinChartView {...p} />,
   density: (p) => <DensityChartView {...p} />,
 };
@@ -754,6 +753,7 @@ export function ChartPanel({ chart, hideSaveButton = false, onModify }: Props) {
   const [copied, setCopied] = useState(false);
   const [showModify, setShowModify] = useState(false);
   const [modifyText, setModifyText] = useState("");
+  const [sizeMode, setSizeMode] = useState<"sm" | "md" | "lg" | "auto">("auto");
 
   const savedWidgets = profile?.settings?.saved_widgets || [];
   const alreadySaved = savedWidgets.some((w) => w.chart.sql === sql) || isSavedLocal;
@@ -784,7 +784,22 @@ export function ChartPanel({ chart, hideSaveButton = false, onModify }: Props) {
   };
 
   const ct = type?.toLowerCase().trim() ?? "bar";
-  const chartProps: ChartProps = { data, colors, primary, above, below, color_rules };
+
+  const getChartHeight = () => {
+    if (sizeMode === "sm") return 200;
+    if (sizeMode === "md") return 280;
+    if (sizeMode === "lg") return 400;
+
+    // 'auto' mode
+    if (ct === "kpi") return 120;
+    if (!Array.isArray(data)) return 280;
+    const len = data.length;
+    if (len > 15) return 380;
+    if (len > 8) return 320;
+    return 280;
+  };
+
+  const chartProps: ChartProps = { data, colors, primary, above, below, color_rules, height: getChartHeight() };
 
   const renderChart = () => {
     if (!data || (Array.isArray(data) && data.length === 0)) {
@@ -802,7 +817,7 @@ export function ChartPanel({ chart, hideSaveButton = false, onModify }: Props) {
       const domain = computeYDomain(rows.map((d) => d.value));
 
       return (
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={getChartHeight()}>
           <ComposedChart data={rows} margin={{ top: 4, right: 16, left: 8, bottom: 60 }} barCategoryGap={isHistogram ? "2%" : undefined}>
             {isArea && (
               <defs>
@@ -851,6 +866,16 @@ export function ChartPanel({ chart, hideSaveButton = false, onModify }: Props) {
           {explanation && <p className="text-xs text-muted-foreground mt-0.5">{explanation}</p>}
         </div>
         <div className="flex items-center gap-2">
+          {/* Sizing Toggles */}
+          <div className="flex items-center rounded-md border bg-background/50 p-0.5 text-[10px] text-muted-foreground mr-1">
+            {(["sm", "md", "lg", "auto"] as const).map((sz) => (
+              <button key={sz} onClick={() => setSizeMode(sz)}
+                title={`Scale chart to ${sz.toUpperCase()} size`}
+                className={`px-1.5 py-0.5 rounded-sm font-semibold transition-colors uppercase ${sizeMode === sz ? "bg-muted text-foreground" : "hover:text-foreground"}`}>
+                {sz}
+              </button>
+            ))}
+          </div>
           {onModify && (
             <button onClick={() => setShowModify(!showModify)} title="Modify chart"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium border transition-colors ${showModify ? "bg-muted text-foreground border-border" : "border-transparent bg-background text-muted-foreground hover:bg-muted hover:text-foreground"}`}>

@@ -47,9 +47,9 @@ function LoginForm() {
   };
 
   return (
-    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-[#1a1a1a] px-4">
+    <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-[#1a1a1a] px-4 py-8 overflow-y-auto">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 mx-auto mb-4 flex items-center justify-center">
             <Sparkles className="h-6 w-6 text-white" />
           </div>

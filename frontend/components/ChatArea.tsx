@@ -91,7 +91,7 @@ export function ChatArea() {
                 Ask anything about SmartRep voicebot data — in English or Greek.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 w-full max-w-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-xl">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s.query}
@@ -104,14 +104,14 @@ export function ChatArea() {
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto w-full px-4 py-10 space-y-8">
+          <div className="max-w-3xl mx-auto w-full px-3 sm:px-4 py-6 sm:py-10 space-y-8">
             {messages.map((msg) =>
               msg.role === "user" ? (
                 /* ── User message ── */
                 <div key={msg.id} className="flex justify-end group">
-                  <div className="flex flex-col items-end gap-1.5 max-w-[78%]">
+                  <div className="flex flex-col items-end gap-1.5 max-w-[88%] sm:max-w-[78%]">
                     {editingMessageId === msg.id ? (
-                      <div className="w-full min-w-[300px] flex flex-col gap-2 bg-white dark:bg-[#2a2a2a] rounded-2xl p-3 border border-gray-200 dark:border-white/10 shadow-sm">
+                      <div className="w-full flex flex-col gap-2 bg-white dark:bg-[#2a2a2a] rounded-2xl p-3 border border-gray-200 dark:border-white/10 shadow-sm">
                         <textarea
                           ref={editRef}
                           value={editValue}
@@ -302,15 +302,12 @@ export function ChatArea() {
               )}
             </button>
           </div>
-          <div className="text-center mt-2 space-y-0.5">
-            <p className="text-[11px] text-gray-400 dark:text-white/25">
-              Hack to the Future AI can make mistakes. Always verify important information.
+          <div className="text-center mt-2">
+            <p className="text-[11px] text-gray-400 dark:text-white/25 hidden sm:block">
+              AI can make mistakes. Always verify important information.
             </p>
             <p className="text-[11px] text-gray-300 dark:text-white/15 font-medium">
-              Hack to the Future x SmartRep.AI
-            </p>
-            <p className="text-[11px] text-gray-300 dark:text-white/15">
-              Makeathon 2026
+              Hack to the Future x SmartRep.AI · Makeathon 2026
             </p>
           </div>
         </div>

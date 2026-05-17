@@ -82,7 +82,7 @@ export function DashboardRightSidebar() {
 
       {/* Sidebar Container */}
       <div
-        className={`fixed md:relative right-0 flex-shrink-0 h-full z-50 flex transition-all duration-300 ease-in-out overflow-hidden ${
+        className={`fixed md:relative right-0 flex-shrink-0 h-full z-50 flex transition-all duration-300 ease-in-out overflow-hidden max-w-[90vw] md:max-w-none ${
           isRightSidebarOpen
             ? "translate-x-0 w-[var(--right-sidebar-width)]"
             : "translate-x-full w-[var(--right-sidebar-width)] md:translate-x-0 md:w-0"

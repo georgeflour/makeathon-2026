@@ -203,9 +203,9 @@ export function Sidebar() {
 
       {/* Sidebar Container */}
       <div
-        className={`absolute md:relative flex-shrink-0 h-full z-30 flex transition-all duration-300 ease-in-out overflow-hidden ${
-          isSidebarOpen 
-            ? "translate-x-0 w-[var(--sidebar-width)]" 
+        className={`absolute md:relative flex-shrink-0 h-full z-30 flex transition-all duration-300 ease-in-out overflow-hidden max-w-[85vw] md:max-w-none ${
+          isSidebarOpen
+            ? "translate-x-0 w-[var(--sidebar-width)]"
             : "-translate-x-full w-[var(--sidebar-width)] md:translate-x-0 md:w-0"
         }`}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}

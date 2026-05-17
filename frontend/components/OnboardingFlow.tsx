@@ -71,15 +71,15 @@ export function OnboardingFlow() {
         }
       `}</style>
 
-      {/* Animated blobs */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+      {/* Animated blobs — hidden on small screens for performance */}
+      <div className="hidden sm:block absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
         <div style={{ position: "absolute", top: "-10%", right: "-5%", width: 420, height: 420, borderRadius: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.18) 0%, transparent 70%)", filter: "blur(48px)", animation: "float1 13s ease-in-out infinite" }} />
         <div style={{ position: "absolute", bottom: "-15%", left: "-10%", width: 520, height: 520, borderRadius: "50%", background: "radial-gradient(circle, rgba(59,130,246,0.13) 0%, transparent 70%)", filter: "blur(56px)", animation: "float2 17s ease-in-out infinite" }} />
         <div style={{ position: "absolute", top: "40%", left: "30%", width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(139,92,246,0.09) 0%, transparent 70%)", filter: "blur(64px)", animation: "float3 11s ease-in-out infinite" }} />
       </div>
 
       {/* Header */}
-      <header className="flex-shrink-0 border-b border-gray-100 dark:border-white/5 px-8 py-4 flex items-center gap-2.5 relative z-10">
+      <header className="flex-shrink-0 border-b border-gray-100 dark:border-white/5 px-4 sm:px-8 py-4 flex items-center gap-2.5 relative z-10">
         <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center">
           <Sparkles className="h-3.5 w-3.5 text-white" />
         </div>
@@ -89,7 +89,7 @@ export function OnboardingFlow() {
       </header>
 
       {/* Step bar */}
-      <div className="flex-shrink-0 px-8 pt-10 pb-0 relative z-10">
+      <div className="flex-shrink-0 px-4 sm:px-8 pt-6 sm:pt-10 pb-0 relative z-10">
         <div className="max-w-lg mx-auto">
           <StepBar current={step} labels={STEP_LABELS} />
         </div>

@@ -39,7 +39,7 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
       <div className="flex self-stretch mr-auto">
         <Link
           href="/"
-          className={`self-stretch flex items-center px-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`self-stretch flex items-center px-2 sm:px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             pathname === "/"
               ? "text-blue-600 dark:text-blue-400 border-blue-500"
               : "text-gray-500 dark:text-white/50 border-transparent hover:text-gray-800 dark:hover:text-white/80"
@@ -49,7 +49,7 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
         </Link>
         <Link
           href="/dashboard"
-          className={`self-stretch flex items-center px-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`self-stretch flex items-center px-2 sm:px-3 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
             pathname === "/dashboard"
               ? "text-blue-600 dark:text-blue-400 border-blue-500"
               : "text-gray-500 dark:text-white/50 border-transparent hover:text-gray-800 dark:hover:text-white/80"

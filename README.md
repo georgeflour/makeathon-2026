@@ -1,5 +1,5 @@
 # Hackathon Starter
-
+Made with love.
 This is a clean, scalable starter project for a 2-day hackathon. It features a Next.js 15 frontend and a FastAPI backend with Supabase and Azure AI Agent integrations.
 
 ## Features
